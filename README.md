@@ -17,6 +17,43 @@ A Go application that tracks Claude Code and Cursor token usage and sends metric
 - **Automatic Data Discovery**: Finds Claude Code data across multiple locations
 - **Cursor API Integration**: Fetches premium request usage and pricing information
 
+```mermaid
+flowchart TD
+    subgraph "Data Sources"
+        CC[Claude Code<br/>Local Directories]
+        CA[Cursor API]
+    end
+    
+    subgraph "Infrastructure Layer"
+        JSONL[JSONL Repository<br/>Read Claude Code data files]
+        CAPI[Cursor API Repository<br/>Fetch usage data]
+        CDB[Cursor DB Repository<br/>SQLite storage]
+    end
+    
+    subgraph "Use Case Layer"
+        CCS[Claude Code Service<br/>Process token usage]
+        CS[Cursor Service<br/>Process API data & track tokens]
+        MS[Metrics Service<br/>Collect & aggregate metrics]
+    end
+    
+    subgraph "External Systems"
+        PROM[Prometheus<br/>Remote Write API]
+    end
+    
+    CC --> JSONL
+    CA --> CAPI
+    JSONL --> CCS
+    CAPI --> CDB
+    CDB --> CS
+    CCS --> MS
+    CS --> MS
+    MS --> PROM
+    
+    style CC fill:#e1f5fe
+    style CA fill:#e1f5fe
+    style PROM fill:#fff3e0
+```
+
 ## Installation
 
 ### Pre-built Binaries
@@ -233,6 +270,7 @@ Uses Cursor API to fetch:
 - Premium (GPT-4) request usage
 - Usage-based pricing information
 - Team membership status
+
 
 ## Notes
 

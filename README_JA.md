@@ -15,6 +15,43 @@ Claude CodeとCursorのトークン使用量を追跡し、Prometheusにメト�
 - **自動データ検出**: 複数の場所からClaude Codeのデータを自動検出
 - **Cursor API統合**: プレミアムリクエストの使用状況と料金情報を取得
 
+```mermaid
+flowchart TD
+    subgraph "データソース"
+        CC[Claude Code<br/>ローカルディレクトリ]
+        CA[Cursor API]
+    end
+    
+    subgraph "インフラストラクチャ層"
+        JSONL[JSONLリポジトリ<br/>Claude Codeデータファイル読み取り]
+        CAPI[Cursor APIリポジトリ<br/>使用量データ取得]
+        CDB[Cursor DBリポジトリ<br/>SQLiteストレージ]
+    end
+    
+    subgraph "ユースケース層"
+        CCS[Claude Codeサービス<br/>トークン使用量処理]
+        CS[Cursorサービス<br/>APIデータ処理・トークン追跡]
+        MS[メトリクスサービス<br/>メトリクス収集・集約]
+    end
+    
+    subgraph "外部システム"
+        PROM[Prometheus<br/>リモートライトAPI]
+    end
+    
+    CC --> JSONL
+    CA --> CAPI
+    JSONL --> CCS
+    CAPI --> CDB
+    CDB --> CS
+    CCS --> MS
+    CS --> MS
+    MS --> PROM
+    
+    style CC fill:#e1f5fe
+    style CA fill:#e1f5fe
+    style PROM fill:#fff3e0
+```
+
 ## インストール
 
 ### ビルド済みバイナリ
@@ -231,6 +268,7 @@ Cursor APIを使用して以下を取得:
 - プレミアム（GPT-4）リクエスト使用量
 - 使用量ベースの料金情報
 - チームメンバーシップステータス
+
 
 ## 注意事項
 
