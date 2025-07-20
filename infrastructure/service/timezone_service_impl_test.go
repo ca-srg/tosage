@@ -129,10 +129,16 @@ func TestTimezoneServiceImpl_DetectSystemTimezone(t *testing.T) {
 	t.Run("TZ environment variable", func(t *testing.T) {
 		// Save original TZ
 		originalTZ := os.Getenv("TZ")
-		defer os.Setenv("TZ", originalTZ)
+		defer func() {
+			if err := os.Setenv("TZ", originalTZ); err != nil {
+				t.Errorf("Failed to restore TZ environment variable: %v", err)
+			}
+		}()
 
 		// Set TZ
-		os.Setenv("TZ", "Europe/London")
+		if err := os.Setenv("TZ", "Europe/London"); err != nil {
+			t.Fatalf("Failed to set TZ environment variable: %v", err)
+		}
 		
 		// Reset service state
 		service.detected = false
