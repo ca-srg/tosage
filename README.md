@@ -1,42 +1,111 @@
-# tosage - Claude Code Token Usage Tool
+# tosage
 
-A simple Go command-line tool that outputs today's Claude Code token usage count in JST (Japan Standard Time).
+[🇯🇵 日本語版](./README_JA.md)
+
+<p align="center">
+  <img src="assets/icon.png" alt="tosage logo" width="256" height="256">
+</p>
+
+A Go application that tracks Claude Code and Cursor token usage and sends metrics to Prometheus. It can run in CLI mode (outputs today's token count) or daemon mode (system tray application with periodic metrics sending).
 
 ## Features
 
-- Outputs token usage from JST 00:00 to current time as a single number
-- Automatically finds Claude Code data directories
-- Returns `0` if no usage today
+- **Token Usage Tracking**: Monitors token usage from both Claude Code and Cursor
+- **Prometheus Integration**: Sends metrics via remote write API
+- **Dual Mode Operation**: CLI mode for quick checks, daemon mode for continuous monitoring
+- **macOS System Tray**: Native system tray support for daemon mode
+- **Automatic Data Discovery**: Finds Claude Code data across multiple locations
+- **Cursor API Integration**: Fetches premium request usage and pricing information
 
 ## Installation
 
-### Prerequisites
+### Pre-built Binaries
 
-- Go 1.21 or higher
+Download the latest release from [GitHub Releases](https://github.com/ca-srg/tosage/releases).
 
-### Build from Source
+### From Source
 
 ```bash
-# Clone the repository
 git clone https://github.com/ca-srg/tosage.git
 cd tosage
-
-# Build the binary
-go build -o tosage
-
-# Or use make
 make build
 ```
 
-## macOS App Bundle and DMG Creation
+## Configuration
 
-This project includes tools to create macOS app bundles and DMG installers.
+```bash
+# 1. Run application to generate config.json
 
-### Makefile Targets
+# 2. Modify config.json
+$ cat ~/.config/tosage/config.json
+{
+  "prometheus": {
+    "remote_write_url": "https://<prometheus_url>/api/prom/push",
+    "username": "",
+    "password": ""
+  },
+  "logging": {
+    "promtail": {
+      "url": "https://<logs_url>",
+      "username": "",
+      "password": ""
+    }
+  }
+}
+
+# 3. Run again
+```
+
+## Usage
+
+### CLI Mode
+
+Outputs today's token count:
+
+```bash
+tosage
+```
+
+### Daemon Mode
+
+Runs as a system tray application with periodic metrics sending:
+
+```bash
+tosage -d
+```
+
+## Building
+
+### Requirements
+
+- Go 1.21 or higher
+- macOS (for daemon mode)
+- Make
+
+### Build Commands
+
+```bash
+# Build for current platform
+make build
+
+# Build macOS ARM64 binary
+make build-darwin
+
+# Build app bundle for macOS
+make app-bundle-arm64
+
+# Build DMG installer
+make dmg-arm64
+
+# Run all checks (fmt, vet, lint, test)
+make check
+```
+
+### macOS App Bundle and DMG Creation
 
 #### App Bundle Targets
 
-##### `app-bundle-arm64` / `app-bundle-amd64`
+##### `app-bundle-arm64`
 **Purpose**: Creates a macOS app bundle (.app)
 
 1. **Binary Build**: Executes `build-darwin` to create Go binary
@@ -49,7 +118,7 @@ This project includes tools to create macOS app bundles and DMG installers.
 
 #### DMG Targets
 
-##### `dmg-arm64` / `dmg-amd64`
+##### `dmg-arm64`
 **Purpose**: Creates unsigned DMG installers
 
 1. Creates app bundle (executes `app-bundle-*`)
@@ -59,13 +128,13 @@ This project includes tools to create macOS app bundles and DMG installers.
    - Sets background image and window layout
    - Output: `tosage-{version}-darwin-{arch}.dmg`
 
-##### `dmg-signed-arm64` / `dmg-signed-amd64`
+##### `dmg-signed-arm64`
 **Purpose**: Creates signed DMGs
 
 - Requires `CODESIGN_IDENTITY` environment variable
 - Adds code signature to app bundle and DMG
 
-##### `dmg-notarized-arm64` / `dmg-notarized-amd64`
+##### `dmg-notarized-arm64`
 **Purpose**: Creates signed and notarized DMGs
 
 - Adds Apple notarization in addition to signing
@@ -112,32 +181,62 @@ make dmg-notarized-arm64
 make dmg-notarized-all
 ```
 
-## Usage
+## Architecture
 
-Simply run the command to get today's token count:
+The project follows Clean Architecture with clear separation of concerns:
 
-```bash
-./tosage
-```
+### Domain Layer
+- **Entities**: Core business entities (Claude Code entries, Cursor usage data)
+- **Repository Interfaces**: Abstractions for data access
+- **Domain Errors**: Business logic specific errors
 
-Output example:
-```
-123456
-```
+### Infrastructure Layer
+- **Configuration**: Application settings management
+- **Dependency Injection**: IoC container for clean dependency management
+- **Logging**: Multiple logger implementations (debug, promtail)
+- **Repository Implementations**: 
+  - Cursor API client for usage data
+  - SQLite database for Cursor token history
+  - JSONL reader for Claude Code data
+  - Prometheus remote write client
 
-If there's no usage today, it outputs:
-```
-0
-```
+### Use Case Layer
+- **Services**: Business logic implementation
+  - Claude Code data processing
+  - Cursor API integration and token tracking
+  - Metrics collection and sending
+  - Application status tracking
+
+### Interface Layer
+- **Controllers**: Application entry points
+  - CLI controller for command-line interface
+  - Daemon controller for background service
+  - System tray controller for UI
 
 ## Data Sources
 
-The tool automatically searches for Claude Code data in these locations:
+### Claude Code
+Searches for data in:
+- `~/.config/claude/projects/` (new default)
+- `~/.claude/projects/` (legacy)
+- `~/Library/Application Support/claude/projects/` (macOS)
 
-- `~/.config/claude/projects/` (new default location)
-- `~/.claude/projects/` (legacy location)
-- macOS: `~/Library/Application Support/claude/projects/`
-- Windows: `%LOCALAPPDATA%\claude\projects\`
+### Cursor
+Uses Cursor API to fetch:
+- Premium (GPT-4) request usage
+- Usage-based pricing information
+- Team membership status
+
+## Notes
+
+- macOS only (uses CGO for system tray)
+- Time calculations use JST (Asia/Tokyo) timezone
+- Configuration file: `~/.config/tosage/config.json`
+
+## TODO
+
+- [ ] Add Vertex AI token usage tracking
+- [ ] Add Amazon Bedrock token usage tracking
 
 ## GitHub Actions Setup
 

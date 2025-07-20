@@ -166,8 +166,6 @@ if [ ! -f "$BINARY_PATH" ]; then
     CURRENT_ARCH=$(uname -m)
     if [ "$CURRENT_ARCH" = "arm64" ] && [ "$ARCH" = "arm64" ]; then
         CGO_ENABLED=1 GOOS=darwin GOARCH=$ARCH go build -tags darwin -ldflags "-w -s -X main.Version=$VERSION -X main.BuildTime=$BUILD_TIME" -o "$BINARY_PATH" .
-    elif [ "$CURRENT_ARCH" = "x86_64" ] && [ "$ARCH" = "amd64" ]; then
-        CGO_ENABLED=1 GOOS=darwin GOARCH=$ARCH go build -tags darwin -ldflags "-w -s -X main.Version=$VERSION -X main.BuildTime=$BUILD_TIME" -o "$BINARY_PATH" .
     else
         echo "Error: Cannot cross-compile with CGO enabled"
         echo "Current architecture: $CURRENT_ARCH"
