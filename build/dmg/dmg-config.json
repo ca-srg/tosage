@@ -1,0 +1,32 @@
+{
+  "title": "tosage",
+  "background": "build/dmg/resources/background.png",
+  "icon": "build/dmg/resources/app.icns",
+  "icon-size": 128,
+  "contents": [
+    {
+      "x": 160,
+      "y": 200,
+      "type": "file",
+      "path": "build/dmg/tosage.app"
+    },
+    {
+      "x": 480,
+      "y": 200,
+      "type": "link",
+      "path": "/Applications"
+    }
+  ],
+  "window": {
+    "size": {
+      "width": 640,
+      "height": 400
+    }
+  },
+  "format": "UDZO",
+  "compression-level": 9,
+  "code-sign": {
+    "identity": "Developer ID Application",
+    "requirements": "designated => anchor apple generic and identifier \"com.tosage.app\" and (certificate leaf[field.1.2.840.113635.100.6.1.9] /* exists */ or certificate 1[field.1.2.840.113635.100.6.2.6] /* exists */ and certificate leaf[field.1.2.840.113635.100.6.1.13] /* exists */ and certificate leaf[subject.OU] = \"TEAM_ID\")"
+  }
+}

@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Test
+    runs-on: macos-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version-file: go.mod
+    
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/go/pkg/mod
+          ~/.cache/go-build
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+    
+    - name: Download dependencies
+      run: make deps
+    
+    - name: Run tests
+      run: make test
+    
+    - name: Run race detector
+      run: go test -race -v ./...
+
+  lint:
+    name: Lint
+    runs-on: macos-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version-file: go.mod
+    
+    - name: Install golangci-lint
+      run: |
+        curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.2.2
+    
+    - name: Run lint
+      run: make lint
+
+  build:
+    name: Build
+    runs-on: macos-latest
+    env:
+      GOOS: darwin
+      GOARCH: arm64
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version-file: go.mod
+    
+    - name: Build
+      run: make build-darwin
+      shell: bash
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: tosage-darwin-arm64
+        path: tosage-*
+
+  integration-test:
+    name: Integration Test
+    runs-on: macos-latest
+    needs: [test, build]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version-file: go.mod
+    
+    - name: Download macOS build
+      uses: actions/download-artifact@v4
+      with:
+        name: tosage-darwin-arm64
+    
+    - name: Make binary executable
+      run: chmod +x tosage-darwin-arm64
+    

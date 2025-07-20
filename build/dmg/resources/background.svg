@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="640" height="400" xmlns="http://www.w3.org/2000/svg">
+  <!-- Pure white background -->
+  <defs>
+    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="2"/>
+      <feOffset dx="0" dy="1" result="offsetblur"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.05"/>
+      </feComponentTransfer>
+      <feMerge> 
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/> 
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="640" height="400" fill="#ffffff"/>
+  
+  <!-- Title and description -->
+  <text x="320" y="70" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="48" font-weight="600" fill="#000000">tosage</text>
+  <text x="320" y="100" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="17" font-weight="400" fill="#6b7280">Token Usage Metrics Collector</text>
+  
+  <!-- App icon area - white background -->
+  <g transform="translate(160, 200)">
+    <rect x="-75" y="-75" width="150" height="150" fill="#ffffff" stroke="#e5e7eb" stroke-width="1.5" rx="24" filter="url(#shadow)"/>
+    <!-- Placeholder for app icon -->
+    <text x="0" y="105" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="500" fill="#4b5563">Drag to install</text>
+  </g>
+  
+  <!-- Applications folder - white background -->
+  <g transform="translate(480, 200)">
+    <rect x="-75" y="-75" width="150" height="150" fill="#ffffff" stroke="#e5e7eb" stroke-width="1.5" rx="24" filter="url(#shadow)"/>
+    <!-- Folder icon centered -->
+    <g transform="translate(0, -15)">
+      <path d="M -35 -25 L -35 25 L 35 25 L 35 -15 L 12 -15 L 6 -25 Z" fill="#60a5fa" stroke="#3b82f6" stroke-width="2"/>
+      <rect x="-30" y="-10" width="60" height="30" fill="#dbeafe" opacity="0.6"/>
+    </g>
+    <text x="0" y="105" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="500" fill="#4b5563">Applications</text>
+  </g>
+  
+  <!-- Arrow -->
+  <defs>
+    <marker id="arrowhead" markerWidth="12" markerHeight="9" refX="12" refY="4.5" orient="auto">
+      <polygon points="0 0, 12 4.5, 0 9" fill="#93c5fd"/>
+    </marker>
+  </defs>
+  <path d="M 250 200 L 390 200" stroke="#93c5fd" stroke-width="3" marker-end="url(#arrowhead)" stroke-dasharray="8,6" opacity="0.8"/>
+  
+  <!-- Bottom text -->
+  <text x="320" y="360" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13" fill="#6b7280">Drop the app icon into the Applications folder to install</text>
+</svg>

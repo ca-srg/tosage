@@ -1,0 +1,398 @@
+name: Release
+
+#on:
+#  push:
+#    branches:
+#      - main
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and Release
+    runs-on: macos-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version-file: go.mod
+    
+    - name: Check DMG Creation Tools
+      run: |
+        # Check available tools
+        echo "=== Checking DMG creation tools ==="
+        command -v hdiutil && echo "✓ hdiutil available" || echo "✗ hdiutil NOT available"
+        command -v codesign && echo "✓ codesign available" || echo "✗ codesign NOT available"
+        command -v iconutil && echo "✓ iconutil available" || echo "✗ iconutil NOT available"
+        command -v sips && echo "✓ sips available" || echo "✗ sips NOT available"
+        command -v SetFile && echo "✓ SetFile available" || echo "✗ SetFile NOT available"
+        command -v osascript && echo "✓ osascript available" || echo "✗ osascript NOT available"
+        echo ""
+        echo "=== System Information ==="
+        sw_vers
+        echo ""
+        echo "Disk space:"
+        df -h
+        echo ""
+        echo "hdiutil version:"
+        hdiutil info | head -5 || true
+        echo ""
+        echo "=== Installing missing tools ==="
+        # Install Xcode Command Line Tools if SetFile is missing
+        if ! command -v SetFile >/dev/null 2>&1; then
+          echo "SetFile not found, checking for alternatives..."
+          # SetFile is part of Xcode Command Line Tools
+          if [ -f "/usr/bin/xcode-select" ]; then
+            echo "Xcode Command Line Tools status:"
+            xcode-select -p || true
+          fi
+        fi
+        echo "==================================="
+    
+    - name: Check Required Secrets
+      env:
+        HAS_CERT: ${{ secrets.MACOS_CERTIFICATE != '' }}
+        HAS_CERT_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD != '' }}
+        HAS_IDENTITY: ${{ (secrets.CODESIGN_IDENTITY != '' || secrets.SIGNING_IDENTITY != '') }}
+        HAS_API_KEY: ${{ secrets.API_KEY_ENCODED != '' }}
+        HAS_API_KEY_ID: ${{ secrets.API_KEY_ID != '' }}
+        HAS_API_ISSUER: ${{ secrets.API_ISSUER != '' }}
+      run: |
+        echo "Checking required secrets for code signing..."
+        MISSING_SECRETS=""
+        
+        if [ "$HAS_CERT" != "true" ]; then
+          MISSING_SECRETS="${MISSING_SECRETS}- MACOS_CERTIFICATE\n"
+        fi
+        
+        if [ "$HAS_CERT_PWD" != "true" ]; then
+          MISSING_SECRETS="${MISSING_SECRETS}- MACOS_CERTIFICATE_PWD\n"
+        fi
+        
+        if [ "$HAS_IDENTITY" != "true" ]; then
+          MISSING_SECRETS="${MISSING_SECRETS}- CODESIGN_IDENTITY or SIGNING_IDENTITY\n"
+        fi
+        
+        # Check notarization secrets
+        if [ "$HAS_API_KEY" != "true" ]; then
+          MISSING_SECRETS="${MISSING_SECRETS}- API_KEY_ENCODED\n"
+        fi
+        
+        if [ "$HAS_API_KEY_ID" != "true" ]; then
+          MISSING_SECRETS="${MISSING_SECRETS}- API_KEY_ID\n"
+        fi
+        
+        if [ "$HAS_API_ISSUER" != "true" ]; then
+          MISSING_SECRETS="${MISSING_SECRETS}- API_ISSUER\n"
+        fi
+        
+        if [ -n "$MISSING_SECRETS" ]; then
+          echo "❌ ERROR: The following required secrets are missing:"
+          echo -e "$MISSING_SECRETS"
+          echo ""
+          echo "Please add these secrets in your GitHub repository settings:"
+          echo "Settings > Secrets and variables > Actions > New repository secret"
+          echo ""
+          echo "Required secrets:"
+          echo "- MACOS_CERTIFICATE: Base64 encoded .p12 certificate file"
+          echo "- MACOS_CERTIFICATE_PWD: Password for the .p12 certificate"
+          echo "- CODESIGN_IDENTITY: Developer ID Application identity"
+          echo "- API_KEY_ENCODED: Base64 encoded .p8 API key file"
+          echo "- API_KEY_ID: App Store Connect API Key ID (e.g., 6886SMKC2ACA)"
+          echo "- API_ISSUER: App Store Connect Issuer ID (UUID format)"
+          exit 1
+        fi
+        
+        echo "✅ All required secrets are set"
+    
+    - name: Import Code Signing Certificate
+      env:
+        MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+        MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+      run: |
+        echo "Setting up code signing certificate..."
+        
+        # Create temporary keychain
+        KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain
+        KEYCHAIN_PWD=actions
+        
+        # Create keychain
+        security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+        security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+        security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+        
+        # Import certificate
+        echo "$MACOS_CERTIFICATE" | base64 --decode > certificate.p12
+        security import certificate.p12 -k "$KEYCHAIN_PATH" -P "$MACOS_CERTIFICATE_PWD" -T /usr/bin/codesign
+        security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+        
+        # Add to search list
+        security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | sed 's/\"//g')
+        
+        rm certificate.p12
+        
+        # List available certificates for debugging
+        echo "Available certificates:"
+        security find-identity -v -p codesigning
+    
+    - name: Setup API Key
+      env:
+        API_KEY_ENCODED: ${{ secrets.API_KEY_ENCODED }}
+        API_KEY_ID: ${{ secrets.API_KEY_ID }}
+      run: |
+        if [ -n "$API_KEY_ENCODED" ]; then
+          mkdir -p certs
+          
+          # Use correct filename based on API_KEY_ID
+          # The filename should be ApiKey_${API_KEY_ID}.p8 or AuthKey_${API_KEY_ID}.p8
+          # Check which format is being used
+          if [ -n "$API_KEY_ID" ]; then
+            # Try both common naming conventions
+            API_KEY_FILENAME="certs/ApiKey_${API_KEY_ID}.p8"
+            echo "Using API key filename: $API_KEY_FILENAME"
+          else
+            API_KEY_FILENAME="certs/AuthKey.p8"
+            echo "Warning: API_KEY_ID not set, using default filename"
+          fi
+          
+          echo "$API_KEY_ENCODED" | base64 --decode > "$API_KEY_FILENAME"
+          
+          # Use absolute path for API_KEY_PATH
+          echo "API_KEY_PATH=$PWD/$API_KEY_FILENAME" >> $GITHUB_ENV
+          echo "API key created at: $PWD/$API_KEY_FILENAME"
+          ls -la certs/
+          echo "File size: $(wc -c < "$API_KEY_FILENAME") bytes"
+          
+          # Verify it's a valid p8 file (should start with -----BEGIN PRIVATE KEY-----)
+          if head -1 "$API_KEY_FILENAME" | grep -q "BEGIN PRIVATE KEY"; then
+            echo "✓ API key file appears to be valid"
+          else
+            echo "❌ WARNING: API key file may be invalid"
+            echo "First line of file:"
+            head -1 "$API_KEY_FILENAME"
+          fi
+        else
+          echo "❌ ERROR: API_KEY_ENCODED secret is not set"
+          echo "Notarization will fail without API key"
+          if [ "${{ vars.NOTARIZE }}" = "true" ]; then
+            echo "NOTARIZE is set to true but API_KEY_ENCODED is missing"
+            exit 1
+          fi
+        fi
+    
+    - name: Verify Code Signing Setup
+      env:
+        CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY || secrets.SIGNING_IDENTITY }}
+      run: |
+        echo "Verifying code signing configuration..."
+        
+        # Verify certificate is in keychain
+        echo "Looking for certificate: $CODESIGN_IDENTITY"
+        if ! security find-identity -v -p codesigning | grep -q "$CODESIGN_IDENTITY"; then
+          echo "❌ ERROR: Certificate not found in keychain"
+          echo ""
+          echo "Certificate identity: $CODESIGN_IDENTITY"
+          echo ""
+          echo "Available certificates in keychain:"
+          security find-identity -v -p codesigning || echo "No certificates found"
+          echo ""
+          echo "Please ensure:"
+          echo "1. MACOS_CERTIFICATE contains valid base64 encoded .p12 file"
+          echo "2. MACOS_CERTIFICATE_PWD contains correct password"
+          echo "3. CODESIGN_IDENTITY matches the certificate identity exactly"
+          exit 1
+        fi
+        
+        echo "✅ Certificate found in keychain"
+        
+        echo ""
+        echo "Notarization settings:"
+        echo "NOTARIZE: ${{ vars.NOTARIZE }}"
+        echo "API_KEY_ID: ${{ secrets.API_KEY_ID != '' && 'Set' || 'Not set' }}"
+        echo "API_ISSUER: ${{ secrets.API_ISSUER != '' && 'Set' || 'Not set' }}"
+        echo "API_KEY_PATH: ${API_KEY_PATH:-Not set}"
+        
+        # Additional verification
+        if [ -n "${API_KEY_PATH}" ]; then
+          echo "Verifying API_KEY_PATH: $API_KEY_PATH"
+          if [ -f "$API_KEY_PATH" ]; then
+            echo "✅ API key file exists"
+          else
+            echo "❌ API key file NOT FOUND at: $API_KEY_PATH"
+          fi
+        fi
+    
+    - name: Build Release Assets
+      env:
+        VERSION: ${{ github.ref_name }}
+        CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY || secrets.SIGNING_IDENTITY }}
+        NOTARIZE: true
+      run: |
+        # Set API credentials with careful handling to avoid masking issues
+        export API_KEY_ID="${{ secrets.API_KEY_ID }}"
+        export API_ISSUER="${{ secrets.API_ISSUER }}"
+        # Debug: Show environment variables
+        echo "=== Build Environment ==="
+        echo "VERSION: $VERSION"
+        echo "CODESIGN_IDENTITY: ${CODESIGN_IDENTITY:+[SET]}"
+        echo "NOTARIZE: $NOTARIZE"
+        echo "API_KEY_ID: ${API_KEY_ID:+[SET]}"
+        echo "API_ISSUER: ${API_ISSUER:+[SET]}"
+        echo "API_KEY_PATH: ${API_KEY_PATH:-[NOT SET]}"
+        echo "======================="
+        
+        # Debug: Check actual values without exposing them
+        echo ""
+        echo "Debug: Credential validation"
+        echo "API_KEY_ID length: ${#API_KEY_ID}"
+        echo "API_KEY_ID first 4 chars: ${API_KEY_ID:0:4}..."
+        echo "API_KEY_ID last 4 chars: ...${API_KEY_ID: -4}"
+        echo "API_ISSUER length: ${#API_ISSUER}"
+        echo "API_ISSUER format check: $(echo "$API_ISSUER" | grep -qE '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$' && echo 'Valid UUID' || echo 'Invalid format')"
+        
+        # Verify notarization credentials if NOTARIZE is true
+        if [ "$NOTARIZE" = "true" ]; then
+          echo ""
+          echo "Verifying notarization credentials..."
+          
+          if [ -z "$API_KEY_ID" ]; then
+            echo "❌ ERROR: API_KEY_ID is empty"
+            echo "Please set the API_KEY_ID secret in GitHub repository settings"
+            exit 1
+          fi
+          
+          if [ -z "$API_ISSUER" ]; then
+            echo "❌ ERROR: API_ISSUER is empty"
+            echo "Please set the API_ISSUER secret in GitHub repository settings"
+            exit 1
+          fi
+          
+          if [ -z "$API_KEY_PATH" ] || [ ! -f "$API_KEY_PATH" ]; then
+            echo "❌ ERROR: API_KEY_PATH is not set or file does not exist"
+            echo "API_KEY_PATH: ${API_KEY_PATH:-[NOT SET]}"
+            echo "Current directory: $PWD"
+            echo "Directory contents:"
+            ls -la
+            if [ -d "certs" ]; then
+              echo "Certs directory contents:"
+              ls -la certs/
+            fi
+            exit 1
+          fi
+          
+          echo "✅ All notarization credentials verified"
+        fi
+        
+        # Run make release which creates both binaries and DMGs with explicit VERSION
+        echo "Running make release..."
+        make release VERSION=${{ github.ref_name }} || {
+          echo "Make release failed with exit code: $?"
+          echo "Contents of current directory:"
+          ls -la
+          echo "Contents of build/dmg directory:"
+          ls -la build/dmg/ || echo "build/dmg not found"
+          exit 1
+        }
+        
+        # List created assets
+        echo ""
+        echo "=== Release assets created ==="
+        ls -la dist/
+        echo ""
+        echo "=== DMG files in root directory ==="
+        ls -la *.dmg 2>/dev/null || echo "No DMG files found in root"
+        echo ""
+        
+        # Verify the expected files exist
+        if [ -f "./dist/tosage-${{ github.ref_name }}-darwin-arm64.dmg" ]; then
+          echo "✓ DMG exists: ./dist/tosage-${{ github.ref_name }}-darwin-arm64.dmg"
+          
+          # Verify DMG integrity
+          echo ""
+          echo "=== Verifying DMG integrity ==="
+          if hdiutil verify "./dist/tosage-${{ github.ref_name }}-darwin-arm64.dmg"; then
+            echo "✓ DMG verification passed"
+          else
+            echo "✗ DMG verification failed"
+            exit 1
+          fi
+          
+          # Check DMG size
+          DMG_SIZE=$(stat -f%z "./dist/tosage-${{ github.ref_name }}-darwin-arm64.dmg" 2>/dev/null || stat -c%s "./dist/tosage-${{ github.ref_name }}-darwin-arm64.dmg" 2>/dev/null)
+          echo "DMG size: $DMG_SIZE bytes ($((DMG_SIZE / 1024 / 1024)) MB)"
+          
+          # Test mount DMG
+          echo ""
+          echo "=== Testing DMG mount ==="
+          if hdiutil attach -noverify -nobrowse -noautoopen "./dist/tosage-${{ github.ref_name }}-darwin-arm64.dmg"; then
+            echo "✓ DMG mount successful"
+            # List mounted volumes
+            ls -la /Volumes/tosage/ || true
+            # Unmount
+            hdiutil detach /Volumes/tosage || true
+          else
+            echo "✗ DMG mount failed"
+            exit 1
+          fi
+        else
+          echo "✗ DMG NOT found: ./dist/tosage-${{ github.ref_name }}-darwin-arm64.dmg"
+          echo "Available DMG files:"
+          find . -name "*.dmg" -type f || echo "No DMG files found anywhere"
+        fi
+        
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ github.ref_name }}
+        name: Release ${{ github.ref_name }}
+        draft: false
+        prerelease: false
+        files: |
+          ./dist/tosage-${{ github.ref_name }}-darwin-arm64.dmg
+        body: |
+          # tosage ${{ github.ref_name }}
+          
+          ## What's Changed
+          - See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details
+          
+          ## Configuration
+          ```bash
+          # 1. Run application to generate config.json
+
+          # 2. Modify config.json
+          $ cat ~/.config/tosage/config.json
+          {
+            "prometheus": {
+              "remote_write_url": "https://<prometheus_url>/api/prom/push",
+              "username": "",
+              "password": ""
+            },
+            "logging": {
+              "promtail": {
+                "url": "https://<logs_url>",
+                "username": "",
+                "password": ""
+              }
+            }
+          }
+
+          # 3. Run again
+          ```
+    
+    - name: Cleanup
+      if: always()
+      run: |
+        # Clean up API key
+        if [ -d certs ]; then
+          rm -f certs/ApiKey_6886SMKC2ACA.p8
+          rmdir certs 2>/dev/null || true
+        fi
