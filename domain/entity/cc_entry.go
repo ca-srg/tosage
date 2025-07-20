@@ -195,8 +195,23 @@ func (u *CcEntry) DateAsTime() time.Time {
 
 // IsInDateRange checks if the cc entry falls within a date range
 func (u *CcEntry) IsInDateRange(start, end time.Time) bool {
+	// Use user timezone if available, otherwise fall back to JST for backward compatibility
+	var loc *time.Location
+	if u.userTimezone != nil {
+		loc = u.userTimezone
+	} else {
+		// Always use JST for date comparisons (backward compatibility)
+		loc, _ = time.LoadLocation("Asia/Tokyo")
+	}
+
+	// Convert all dates to the same timezone for comparison
 	entryDate := u.DateAsTime()
-	return !entryDate.Before(start) && !entryDate.After(end)
+	startInLoc := start.In(loc)
+	startDate := time.Date(startInLoc.Year(), startInLoc.Month(), startInLoc.Day(), 0, 0, 0, 0, loc)
+	endInLoc := end.In(loc)
+	endDate := time.Date(endInLoc.Year(), endInLoc.Month(), endInLoc.Day(), 23, 59, 59, 999999999, loc)
+
+	return !entryDate.Before(startDate) && !entryDate.After(endDate)
 }
 
 // IsOnDate checks if the cc entry is on a specific date
