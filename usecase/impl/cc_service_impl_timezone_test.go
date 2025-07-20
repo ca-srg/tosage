@@ -127,9 +127,9 @@ func (m *MockCcRepository) DeleteByDateRange(start, end time.Time) error {
 
 // MockTimezoneService is a mock implementation for testing
 type MockTimezoneService struct {
-	Location        *time.Location
-	TimezoneInfo    repository.TimezoneInfo
-	Error           error
+	Location     *time.Location
+	TimezoneInfo repository.TimezoneInfo
+	Error        error
 }
 
 func (m *MockTimezoneService) GetUserTimezone() (*time.Location, error) {
@@ -190,12 +190,12 @@ func TestCcServiceImpl_CalculateDailyTokensInUserTimezone(t *testing.T) {
 	mockTimezoneService := &MockTimezoneService{
 		Location: time.FixedZone("EST", -5*3600), // EST timezone
 	}
-	
+
 	service := NewCcServiceImpl(mockRepo, mockTimezoneService)
 
 	// Test data
 	tokenStats := valueobject.NewTokenStats(100, 200, 50, 25)
-	
+
 	// Create test entries
 	// Entry at EST 2024-01-15 23:00 (UTC 2024-01-16 04:00)
 	entry1, _ := entity.NewCcEntry(
@@ -209,7 +209,7 @@ func TestCcServiceImpl_CalculateDailyTokensInUserTimezone(t *testing.T) {
 		"msg1",
 		"req1",
 	)
-	
+
 	// Entry at EST 2024-01-15 10:00 (UTC 2024-01-15 15:00)
 	entry2, _ := entity.NewCcEntry(
 		"id2",
@@ -226,10 +226,10 @@ func TestCcServiceImpl_CalculateDailyTokensInUserTimezone(t *testing.T) {
 	// Mock repository behavior
 	// When querying for EST 2024-01-15, it should convert to UTC range
 	estDate := time.Date(2024, 1, 15, 12, 0, 0, 0, time.FixedZone("EST", -5*3600))
-	expectedStart := time.Date(2024, 1, 15, 5, 0, 0, 0, time.UTC) // EST 00:00 = UTC 05:00
+	expectedStart := time.Date(2024, 1, 15, 5, 0, 0, 0, time.UTC)         // EST 00:00 = UTC 05:00
 	expectedEnd := time.Date(2024, 1, 16, 4, 59, 59, 999999999, time.UTC) // EST 23:59:59 = UTC 04:59:59 next day
-	
-	mockRepo.On("FindByDateRange", 
+
+	mockRepo.On("FindByDateRange",
 		mock.MatchedBy(func(t time.Time) bool { return t.Unix() == expectedStart.Unix() }),
 		mock.MatchedBy(func(t time.Time) bool { return t.Unix() == expectedEnd.Unix() }),
 	).Return([]*entity.CcEntry{entry1, entry2}, nil)
@@ -250,16 +250,16 @@ func TestCcServiceImpl_CalculateTodayTokensInUserTimezone(t *testing.T) {
 	mockTimezoneService := &MockTimezoneService{
 		Location: jst,
 	}
-	
+
 	service := NewCcServiceImpl(mockRepo, mockTimezoneService)
 
 	// Test data
 	tokenStats := valueobject.NewTokenStats(100, 200, 50, 25)
-	
+
 	// Create test entry for today in JST
 	now := time.Now()
 	todayStart, todayEnd := mockTimezoneService.GetDayBoundaries(now)
-	
+
 	entry, _ := entity.NewCcEntry(
 		"id1",
 		now,
@@ -273,12 +273,12 @@ func TestCcServiceImpl_CalculateTodayTokensInUserTimezone(t *testing.T) {
 	)
 
 	// Mock repository behavior
-	mockRepo.On("FindByDateRange", 
-		mock.MatchedBy(func(t time.Time) bool { 
-			return t.Unix() >= todayStart.Unix()-1 && t.Unix() <= todayStart.Unix()+1 
+	mockRepo.On("FindByDateRange",
+		mock.MatchedBy(func(t time.Time) bool {
+			return t.Unix() >= todayStart.Unix()-1 && t.Unix() <= todayStart.Unix()+1
 		}),
-		mock.MatchedBy(func(t time.Time) bool { 
-			return t.Unix() >= todayEnd.Unix()-1 && t.Unix() <= todayEnd.Unix()+1 
+		mock.MatchedBy(func(t time.Time) bool {
+			return t.Unix() >= todayEnd.Unix()-1 && t.Unix() <= todayEnd.Unix()+1
 		}),
 	).Return([]*entity.CcEntry{entry}, nil)
 
@@ -298,7 +298,7 @@ func TestCcServiceImpl_GetDateRangeInUserTimezone(t *testing.T) {
 	mockTimezoneService := &MockTimezoneService{
 		Location: pst,
 	}
-	
+
 	service := NewCcServiceImpl(mockRepo, mockTimezoneService)
 
 	// Mock repository to return UTC times
@@ -311,24 +311,24 @@ func TestCcServiceImpl_GetDateRangeInUserTimezone(t *testing.T) {
 
 	// Assert
 	require.NoError(t, err)
-	
+
 	// Verify times are converted to PST
 	assert.Equal(t, pst, start.Location())
 	assert.Equal(t, pst, end.Location())
-	
+
 	// UTC 2024-01-01 00:00 = PST 2023-12-31 16:00
 	assert.Equal(t, 2023, start.Year())
 	assert.Equal(t, time.December, start.Month())
 	assert.Equal(t, 31, start.Day())
 	assert.Equal(t, 16, start.Hour())
-	
+
 	// UTC 2024-01-31 23:59 = PST 2024-01-31 15:59
 	assert.Equal(t, 2024, end.Year())
 	assert.Equal(t, time.January, end.Month())
 	assert.Equal(t, 31, end.Day())
 	assert.Equal(t, 15, end.Hour())
 	assert.Equal(t, 59, end.Minute())
-	
+
 	mockRepo.AssertExpectations(t)
 }
 
@@ -340,7 +340,7 @@ func TestCcServiceImpl_TimezoneServiceFallback(t *testing.T) {
 	// Test data
 	tokenStats := valueobject.NewTokenStats(100, 200, 50, 25)
 	date := time.Date(2024, 1, 15, 12, 0, 0, 0, time.UTC)
-	
+
 	entry, _ := entity.NewCcEntry(
 		"id1",
 		date,
@@ -356,8 +356,8 @@ func TestCcServiceImpl_TimezoneServiceFallback(t *testing.T) {
 	// Mock repository behavior - should use date as-is
 	expectedStart := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
 	expectedEnd := expectedStart.Add(24 * time.Hour)
-	
-	mockRepo.On("FindByDateRange", 
+
+	mockRepo.On("FindByDateRange",
 		mock.MatchedBy(func(t time.Time) bool { return t.Equal(expectedStart) }),
 		mock.MatchedBy(func(t time.Time) bool { return t.Equal(expectedEnd) }),
 	).Return([]*entity.CcEntry{entry}, nil)

@@ -149,11 +149,11 @@ func TestCcEntry_SetUserTimezone(t *testing.T) {
 
 func TestCcEntry_DSTHandling(t *testing.T) {
 	tokenStats := valueobject.NewTokenStats(100, 200, 50, 25)
-	
+
 	// Test spring forward (2AM -> 3AM)
 	// March 10, 2024, 7:00 UTC = 2:00 EST -> 3:00 EDT
 	springForward := time.Date(2024, 3, 10, 7, 0, 0, 0, time.UTC)
-	
+
 	est, _ := time.LoadLocation("America/New_York")
 	entry1, err := NewCcEntryWithTimezone(
 		"test-id-1",
@@ -177,7 +177,7 @@ func TestCcEntry_DSTHandling(t *testing.T) {
 	// Test fall back (2AM -> 1AM)
 	// November 3, 2024, 6:00 UTC = 2:00 EDT -> 1:00 EST
 	fallBack := time.Date(2024, 11, 3, 6, 0, 0, 0, time.UTC)
-	
+
 	entry2, err := NewCcEntryWithTimezone(
 		"test-id-2",
 		fallBack,
@@ -201,18 +201,18 @@ func TestCcEntry_DSTHandling(t *testing.T) {
 func TestCcEntryCollection_TimezoneSupport(t *testing.T) {
 	tokenStats := valueobject.NewTokenStats(100, 200, 50, 25)
 	jst, _ := time.LoadLocation("Asia/Tokyo")
-	
+
 	// Create entries at different times
 	entries := []*CcEntry{}
-	
+
 	// Entry 1: UTC 2024-01-15 14:00 = JST 2024-01-15 23:00
 	entry1, _ := NewCcEntry("id1", time.Date(2024, 1, 15, 14, 0, 0, 0, time.UTC), "s1", "/p1", "gpt-4", tokenStats, "1.0", "m1", "r1")
 	entries = append(entries, entry1)
-	
+
 	// Entry 2: UTC 2024-01-15 15:00 = JST 2024-01-16 00:00
 	entry2, _ := NewCcEntry("id2", time.Date(2024, 1, 15, 15, 0, 0, 0, time.UTC), "s2", "/p2", "gpt-4", tokenStats, "1.0", "m2", "r2")
 	entries = append(entries, entry2)
-	
+
 	// Entry 3: UTC 2024-01-16 01:00 = JST 2024-01-16 10:00
 	entry3, _ := NewCcEntry("id3", time.Date(2024, 1, 16, 1, 0, 0, 0, time.UTC), "s3", "/p3", "gpt-4", tokenStats, "1.0", "m3", "r3")
 	entries = append(entries, entry3)
@@ -231,7 +231,7 @@ func TestCcEntryCollection_TimezoneSupport(t *testing.T) {
 		// Filter for JST 2024-01-15
 		date := time.Date(2024, 1, 15, 12, 0, 0, 0, jst)
 		filtered := collection.FilterByDateInUserTimezone(date)
-		
+
 		// Should only include entry1
 		assert.Equal(t, 1, filtered.Count())
 		assert.Equal(t, "id1", filtered.Entries()[0].ID())
@@ -242,22 +242,22 @@ func TestCcEntryCollection_TimezoneSupport(t *testing.T) {
 		start := time.Date(2024, 1, 16, 0, 0, 0, 0, jst)
 		end := time.Date(2024, 1, 16, 23, 59, 59, 999999999, jst)
 		filtered := collection.FilterByDateRangeInUserTimezone(start, end)
-		
+
 		// Should include entry2 and entry3
 		assert.Equal(t, 2, filtered.Count())
 	})
 
 	t.Run("GroupByDateInUserTimezone", func(t *testing.T) {
 		groups := collection.GroupByDateInUserTimezone()
-		
+
 		// Should have 2 groups: 2024-01-15 and 2024-01-16
 		assert.Equal(t, 2, len(groups))
 		assert.NotNil(t, groups["2024-01-15"])
 		assert.NotNil(t, groups["2024-01-16"])
-		
+
 		// 2024-01-15 should have 1 entry
 		assert.Equal(t, 1, groups["2024-01-15"].Count())
-		
+
 		// 2024-01-16 should have 2 entries
 		assert.Equal(t, 2, groups["2024-01-16"].Count())
 	})

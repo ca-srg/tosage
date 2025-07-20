@@ -20,7 +20,7 @@ func TestTimezoneServiceImpl_GetUserTimezone(t *testing.T) {
 	loc, err := service.GetUserTimezone()
 	assert.NoError(t, err)
 	assert.NotNil(t, loc)
-	
+
 	// Should return cached location on second call
 	loc2, err := service.GetUserTimezone()
 	assert.NoError(t, err)
@@ -34,7 +34,7 @@ func TestTimezoneServiceImpl_GetConfiguredTimezone(t *testing.T) {
 	service := NewTimezoneServiceImpl(cfg, logger)
 
 	loc, err := service.GetConfiguredTimezone()
-	
+
 	// Should always return system timezone without error
 	assert.NoError(t, err)
 	assert.NotNil(t, loc)
@@ -48,7 +48,7 @@ func TestTimezoneServiceImpl_ConvertToUserTime(t *testing.T) {
 	// Test UTC to user's system timezone conversion
 	utcTime := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
 	userTime := service.ConvertToUserTime(utcTime)
-	
+
 	// Should convert to system timezone
 	systemLoc, _ := service.GetUserTimezone()
 	expectedTime := utcTime.In(systemLoc)
@@ -63,15 +63,15 @@ func TestTimezoneServiceImpl_GetDayBoundaries(t *testing.T) {
 	// Test with system timezone
 	inputTime := time.Date(2024, 1, 15, 14, 30, 0, 0, time.UTC)
 	start, end := service.GetDayBoundaries(inputTime)
-	
+
 	// Should use system timezone for boundaries
 	systemLoc, _ := service.GetUserTimezone()
 	userTime := inputTime.In(systemLoc)
 	year, month, day := userTime.Date()
-	
+
 	expectedStart := time.Date(year, month, day, 0, 0, 0, 0, systemLoc)
 	expectedEnd := time.Date(year, month, day, 23, 59, 59, 999999999, systemLoc)
-	
+
 	// Compare Unix timestamps to avoid timezone representation issues
 	assert.Equal(t, expectedStart.Unix(), start.Unix())
 	assert.Equal(t, expectedEnd.Unix(), end.Unix())
@@ -83,7 +83,7 @@ func TestTimezoneServiceImpl_GetCurrentDayStart(t *testing.T) {
 	service := NewTimezoneServiceImpl(cfg, logger)
 
 	dayStart := service.GetCurrentDayStart()
-	
+
 	// Verify it's at the start of the day
 	assert.Equal(t, 0, dayStart.Hour())
 	assert.Equal(t, 0, dayStart.Minute())
@@ -98,7 +98,7 @@ func TestTimezoneServiceImpl_FormatTimeForUser(t *testing.T) {
 
 	utcTime := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
 	formatted := service.FormatTimeForUser(utcTime, "2006-01-02 15:04:05")
-	
+
 	// Should format in system timezone
 	systemLoc, _ := service.GetUserTimezone()
 	expectedFormatted := utcTime.In(systemLoc).Format("2006-01-02 15:04:05")
@@ -111,7 +111,7 @@ func TestTimezoneServiceImpl_GetTimezoneInfo(t *testing.T) {
 	service := NewTimezoneServiceImpl(cfg, logger)
 
 	info := service.GetTimezoneInfo()
-	
+
 	// Should always report system timezone
 	assert.Equal(t, "system", info.DetectionMethod)
 	assert.NotEmpty(t, info.Name)
@@ -128,10 +128,16 @@ func TestTimezoneServiceImpl_DetectSystemTimezone(t *testing.T) {
 	// Test with TZ environment variable
 	t.Run("TZ environment variable", func(t *testing.T) {
 		// Save original TZ
-		originalTZ := os.Getenv("TZ")
+		originalTZ, originalTZSet := os.LookupEnv("TZ")
 		defer func() {
-			if err := os.Setenv("TZ", originalTZ); err != nil {
-				t.Errorf("Failed to restore TZ environment variable: %v", err)
+			if originalTZSet {
+				if err := os.Setenv("TZ", originalTZ); err != nil {
+					t.Errorf("Failed to restore TZ environment variable: %v", err)
+				}
+			} else {
+				if err := os.Unsetenv("TZ"); err != nil {
+					t.Errorf("Failed to unset TZ environment variable: %v", err)
+				}
 			}
 		}()
 
@@ -139,13 +145,13 @@ func TestTimezoneServiceImpl_DetectSystemTimezone(t *testing.T) {
 		if err := os.Setenv("TZ", "Europe/London"); err != nil {
 			t.Fatalf("Failed to set TZ environment variable: %v", err)
 		}
-		
+
 		// Reset service state
 		service.detected = false
 		service.userLocation = nil
 
 		loc, err := service.detectSystemTimezone()
-		
+
 		// Should detect from TZ or fall back gracefully
 		assert.NotNil(t, loc)
 		if err == nil && loc.String() == "Europe/London" {
@@ -156,9 +162,9 @@ func TestTimezoneServiceImpl_DetectSystemTimezone(t *testing.T) {
 
 // MockTimezoneService is a mock implementation for testing
 type MockTimezoneService struct {
-	Location        *time.Location
-	TimezoneInfo    repository.TimezoneInfo
-	Error           error
+	Location     *time.Location
+	TimezoneInfo repository.TimezoneInfo
+	Error        error
 }
 
 func (m *MockTimezoneService) GetUserTimezone() (*time.Location, error) {

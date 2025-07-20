@@ -95,7 +95,7 @@ func (r *JSONLCcRepository) loadAllEntries() ([]*entity.CcEntry, error) {
 	}
 
 	// fmt.Fprintf(os.Stderr, "[DEBUG] Total entries loaded: %d\n", len(allEntries))
-	
+
 	// Calculate total tokens and date range
 	totalTokens := 0
 	var minDate, maxDate time.Time
@@ -103,7 +103,7 @@ func (r *JSONLCcRepository) loadAllEntries() ([]*entity.CcEntry, error) {
 		minDate = allEntries[0].Timestamp()
 		maxDate = allEntries[0].Timestamp()
 	}
-	
+
 	for _, entry := range allEntries {
 		totalTokens += entry.TotalTokens()
 		if entry.Timestamp().Before(minDate) {
@@ -217,8 +217,8 @@ func (r *JSONLCcRepository) loadJSONLFile(filePath, projectPath, sessionID strin
 		}
 
 		// Debug log token values
-		// fmt.Fprintf(os.Stderr, "[DEBUG] Line %d - Input tokens: %d, Output tokens: %d, Cache creation: %d, Cache read: %d\n", 
-		// 	lineNum, 
+		// fmt.Fprintf(os.Stderr, "[DEBUG] Line %d - Input tokens: %d, Output tokens: %d, Cache creation: %d, Cache read: %d\n",
+		// 	lineNum,
 		// 	data.Message.Usage.InputTokens,
 		// 	data.Message.Usage.OutputTokens,
 		// 	data.Message.Usage.CacheCreationInputTokens,
@@ -341,7 +341,7 @@ func (r *JSONLCcRepository) FindByDateRange(start, end time.Time) ([]*entity.CcE
 	}
 
 	// fmt.Fprintf(os.Stderr, "[DEBUG] FindByDateRange - Start: %v, End: %v\n", start, end)
-	
+
 	var result []*entity.CcEntry
 	for _, entry := range entries {
 		if entry.IsInDateRange(start, end) {

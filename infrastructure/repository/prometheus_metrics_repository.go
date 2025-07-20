@@ -108,10 +108,10 @@ func (r *PrometheusMetricsRepository) SendTokenMetricWithTimezone(totalTokens in
 
 	// Create labels for the metric including timezone information
 	labels := map[string]string{
-		"host":               hostLabel,
-		"timezone":           timezoneInfo.Name,
-		"timezone_offset":    timezoneInfo.Offset,
-		"detection_method":   timezoneInfo.DetectionMethod,
+		"host":             hostLabel,
+		"timezone":         timezoneInfo.Name,
+		"timezone_offset":  timezoneInfo.Offset,
+		"detection_method": timezoneInfo.DetectionMethod,
 	}
 
 	// Send metric via Remote Write

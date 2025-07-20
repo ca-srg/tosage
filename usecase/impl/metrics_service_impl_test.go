@@ -350,7 +350,7 @@ func TestMetricsServiceImpl_SendCurrentMetrics(t *testing.T) {
 			}
 
 			timezoneService := &MockTimezoneService{Location: time.UTC}
-	service := NewMetricsServiceImpl(ccService, nil, metricsRepo, config, &mockLogger{}, timezoneService)
+			service := NewMetricsServiceImpl(ccService, nil, metricsRepo, config, &mockLogger{}, timezoneService)
 
 			err := service.SendCurrentMetrics()
 			if (err != nil) != tt.wantErr {

@@ -11,8 +11,8 @@ import (
 
 // CcServiceImpl implements the CcService interface
 type CcServiceImpl struct {
-	ccRepo         repository.CcRepository
-	loadCcData     *LoadCcDataUseCase
+	ccRepo          repository.CcRepository
+	loadCcData      *LoadCcDataUseCase
 	timezoneService repository.TimezoneService
 }
 
@@ -38,9 +38,9 @@ func (s *CcServiceImpl) CalculateDailyTokens(date time.Time) (int, error) {
 	// Get entries for the specific date
 	startOfDay := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
 	endOfDay := startOfDay.Add(24 * time.Hour)
-	
+
 	// fmt.Printf("[DEBUG] CalculateDailyTokens - Date: %v, StartOfDay: %v, EndOfDay: %v\n", date, startOfDay, endOfDay)
-	
+
 	entries, err := s.ccRepo.FindByDateRange(startOfDay, endOfDay)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get entries for date: %w", err)
