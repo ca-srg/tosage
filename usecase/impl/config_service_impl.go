@@ -200,7 +200,6 @@ func (s *ConfigServiceImpl) ExportConfig() map[string]interface{} {
 
 	// 基本設定
 	exportMap["claude_path"] = s.config.ClaudePath
-	exportMap["timezone"] = s.config.TimeZone
 
 	// Prometheus設定
 	if s.config.Prometheus != nil {

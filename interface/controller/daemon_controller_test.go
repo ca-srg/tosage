@@ -354,7 +354,19 @@ func (m *MockCcService) GetAvailableModels() ([]string, error) {
 }
 
 func (m *MockCcService) GetDateRange() (start, end time.Time, err error) {
-	return time.Time{}, time.Time{}, nil
+	return time.Now(), time.Now(), nil
+}
+
+func (m *MockCcService) CalculateDailyTokensInUserTimezone(date time.Time) (int, error) {
+	return m.tokenCount, m.err
+}
+
+func (m *MockCcService) CalculateTodayTokensInUserTimezone() (int, error) {
+	return m.tokenCount, m.err
+}
+
+func (m *MockCcService) GetDateRangeInUserTimezone() (start, end time.Time, err error) {
+	return time.Now(), time.Now(), nil
 }
 
 type MockMetricsService struct {

@@ -27,7 +27,6 @@ func TestJSONConfigRepository_SaveAndLoad(t *testing.T) {
 	// テスト用の設定
 	testConfig := &config.AppConfig{
 		ClaudePath: "/test/path",
-		TimeZone:   "Asia/Tokyo",
 		Prometheus: &config.PrometheusConfig{
 			RemoteWriteURL: "http://test-prometheus:9090/api/v1/write",
 			IntervalSec:    60,
@@ -74,9 +73,6 @@ func TestJSONConfigRepository_SaveAndLoad(t *testing.T) {
 	if loadedConfig.ClaudePath != testConfig.ClaudePath {
 		t.Errorf("ClaudePath mismatch: got %s, want %s", loadedConfig.ClaudePath, testConfig.ClaudePath)
 	}
-	if loadedConfig.TimeZone != testConfig.TimeZone {
-		t.Errorf("TimeZone mismatch: got %s, want %s", loadedConfig.TimeZone, testConfig.TimeZone)
-	}
 	if loadedConfig.Prometheus.RemoteWriteURL != testConfig.Prometheus.RemoteWriteURL {
 		t.Errorf("Prometheus.RemoteWriteURL mismatch: got %s, want %s",
 			loadedConfig.Prometheus.RemoteWriteURL, testConfig.Prometheus.RemoteWriteURL)
@@ -101,7 +97,6 @@ func TestJSONConfigRepository_Backup(t *testing.T) {
 	// 初期設定を保存
 	initialConfig := &config.AppConfig{
 		ClaudePath: "/initial/path",
-		TimeZone:   "UTC",
 		Prometheus: &config.PrometheusConfig{
 			RemoteWriteURL: "http://initial:9090",
 			IntervalSec:    60,
@@ -117,7 +112,6 @@ func TestJSONConfigRepository_Backup(t *testing.T) {
 	// 更新された設定を保存（これによりバックアップが作成されるはず）
 	updatedConfig := &config.AppConfig{
 		ClaudePath: "/updated/path",
-		TimeZone:   "Asia/Tokyo",
 		Prometheus: &config.PrometheusConfig{
 			RemoteWriteURL: "http://updated:9090",
 			IntervalSec:    120,

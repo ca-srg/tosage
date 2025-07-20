@@ -14,16 +14,17 @@ import (
 
 // MetricsServiceImpl implements the MetricsService interface
 type MetricsServiceImpl struct {
-	ccService     usecase.CcService
-	cursorService usecase.CursorService
-	metricsRepo   repository.MetricsRepository
-	config        *config.PrometheusConfig
-	ticker        *time.Ticker
-	stopChan      chan struct{}
-	wg            sync.WaitGroup
-	mu            sync.Mutex
-	isRunning     bool
-	logger        domain.Logger
+	ccService       usecase.CcService
+	cursorService   usecase.CursorService
+	metricsRepo     repository.MetricsRepository
+	config          *config.PrometheusConfig
+	ticker          *time.Ticker
+	stopChan        chan struct{}
+	wg              sync.WaitGroup
+	mu              sync.Mutex
+	isRunning       bool
+	logger          domain.Logger
+	timezoneService repository.TimezoneService
 }
 
 // NewMetricsServiceImpl creates a new metrics service implementation
@@ -33,15 +34,17 @@ func NewMetricsServiceImpl(
 	metricsRepo repository.MetricsRepository,
 	config *config.PrometheusConfig,
 	logger domain.Logger,
+	timezoneService repository.TimezoneService,
 ) usecase.MetricsService {
 	return &MetricsServiceImpl{
-		ccService:     ccService,
-		cursorService: cursorService,
-		metricsRepo:   metricsRepo,
-		config:        config,
-		stopChan:      make(chan struct{}),
-		isRunning:     false,
-		logger:        logger,
+		ccService:       ccService,
+		cursorService:   cursorService,
+		metricsRepo:     metricsRepo,
+		config:          config,
+		stopChan:        make(chan struct{}),
+		isRunning:       false,
+		logger:          logger,
+		timezoneService: timezoneService,
 	}
 }
 
@@ -146,8 +149,17 @@ func (s *MetricsServiceImpl) sendMetrics() error {
 		}
 
 		// Send metrics to Prometheus
-		if err := s.metricsRepo.SendTokenMetric(totalTokens, s.config.HostLabel, "tosage_cc_token"); err != nil {
-			return fmt.Errorf("failed to send token metric: %w", err)
+		if s.timezoneService != nil {
+			// Send with timezone information
+			timezoneInfo := s.timezoneService.GetTimezoneInfo()
+			if err := s.metricsRepo.SendTokenMetricWithTimezone(totalTokens, s.config.HostLabel, "tosage_cc_token", timezoneInfo); err != nil {
+				return fmt.Errorf("failed to send token metric with timezone: %w", err)
+			}
+		} else {
+			// Fall back to sending without timezone information
+			if err := s.metricsRepo.SendTokenMetric(totalTokens, s.config.HostLabel, "tosage_cc_token"); err != nil {
+				return fmt.Errorf("failed to send token metric: %w", err)
+			}
 		}
 
 		s.logger.Info(ctx, "Successfully sent Claude Code metrics", domain.NewField("tokens", totalTokens))
@@ -162,13 +174,27 @@ func (s *MetricsServiceImpl) sendMetrics() error {
 			s.logger.Warn(ctx, "Failed to get Cursor token usage", domain.NewField("error", err.Error()))
 		} else {
 			// Send Cursor token metric
-			if err := s.metricsRepo.SendTokenMetric(int(totalTokens), s.config.HostLabel, "tosage_cursor_token"); err != nil {
-				// Log error but don't fail the entire metrics operation
-				s.logger.Warn(ctx, "Failed to send Cursor metrics", domain.NewField("error", err.Error()))
+			if s.timezoneService != nil {
+				// Send with timezone information
+				timezoneInfo := s.timezoneService.GetTimezoneInfo()
+				if err := s.metricsRepo.SendTokenMetricWithTimezone(int(totalTokens), s.config.HostLabel, "tosage_cursor_token", timezoneInfo); err != nil {
+					// Log error but don't fail the entire metrics operation
+					s.logger.Warn(ctx, "Failed to send Cursor metrics with timezone", domain.NewField("error", err.Error()))
+				} else {
+					s.logger.Info(ctx, "Successfully sent Cursor metrics",
+						domain.NewField("total_tokens", totalTokens),
+						domain.NewField("period", "JST 00:00 to now"))
+				}
 			} else {
-				s.logger.Info(ctx, "Successfully sent Cursor metrics",
-					domain.NewField("total_tokens", totalTokens),
-					domain.NewField("period", "JST 00:00 to now"))
+				// Fall back to sending without timezone information
+				if err := s.metricsRepo.SendTokenMetric(int(totalTokens), s.config.HostLabel, "tosage_cursor_token"); err != nil {
+					// Log error but don't fail the entire metrics operation
+					s.logger.Warn(ctx, "Failed to send Cursor metrics", domain.NewField("error", err.Error()))
+				} else {
+					s.logger.Info(ctx, "Successfully sent Cursor metrics",
+						domain.NewField("total_tokens", totalTokens),
+						domain.NewField("period", "JST 00:00 to now"))
+				}
 			}
 		}
 	}

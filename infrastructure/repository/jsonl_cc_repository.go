@@ -67,12 +67,14 @@ func (r *JSONLCcRepository) loadAllEntries() ([]*entity.CcEntry, error) {
 	if r.cache.entries != nil && time.Since(r.cache.lastModified) < 5*time.Minute {
 		entries := r.cache.entries
 		r.cache.mu.RUnlock()
+		fmt.Fprintf(os.Stderr, "[DEBUG] Returning %d cached entries\n", len(entries))
 		return entries, nil
 	}
 	r.cache.mu.RUnlock()
 
 	// Load fresh data
 	validPaths := r.getValidClaudePaths()
+	// fmt.Fprintf(os.Stderr, "[DEBUG] Found %d valid Claude paths: %v\n", len(validPaths), validPaths)
 	if len(validPaths) == 0 {
 		return nil, fmt.Errorf("no valid Claude data directories found")
 	}
@@ -81,14 +83,40 @@ func (r *JSONLCcRepository) loadAllEntries() ([]*entity.CcEntry, error) {
 	processedIDs := make(map[string]bool) // For deduplication
 
 	for _, basePath := range validPaths {
+		// fmt.Fprintf(os.Stderr, "[DEBUG] Loading from base path: %s\n", basePath)
 		entries, err := r.loadFromPath(basePath, processedIDs)
 		if err != nil {
 			// Log error but continue with other paths
 			fmt.Fprintf(os.Stderr, "Warning: Failed to load from %s: %v\n", basePath, err)
 			continue
 		}
+		// fmt.Fprintf(os.Stderr, "[DEBUG] Loaded %d entries from %s\n", len(entries), basePath)
 		allEntries = append(allEntries, entries...)
 	}
+
+	// fmt.Fprintf(os.Stderr, "[DEBUG] Total entries loaded: %d\n", len(allEntries))
+
+	// Calculate total tokens and date range
+	totalTokens := 0
+	var minDate, maxDate time.Time
+	if len(allEntries) > 0 {
+		minDate = allEntries[0].Timestamp()
+		maxDate = allEntries[0].Timestamp()
+	}
+
+	for _, entry := range allEntries {
+		totalTokens += entry.TotalTokens()
+		if entry.Timestamp().Before(minDate) {
+			minDate = entry.Timestamp()
+		}
+		if entry.Timestamp().After(maxDate) {
+			maxDate = entry.Timestamp()
+		}
+	}
+	// fmt.Fprintf(os.Stderr, "[DEBUG] Total tokens across all entries: %d\n", totalTokens)
+	// if len(allEntries) > 0 {
+	// 	fmt.Fprintf(os.Stderr, "[DEBUG] Date range of entries: %v to %v\n", minDate, maxDate)
+	// }
 
 	if len(allEntries) == 0 {
 		return nil, fmt.Errorf("no cc data found in any Claude directory")
@@ -167,6 +195,8 @@ func (r *JSONLCcRepository) loadJSONLFile(filePath, projectPath, sessionID strin
 		_ = file.Close()
 	}()
 
+	// fmt.Fprintf(os.Stderr, "[DEBUG] Loading JSONL file: %s\n", filePath)
+
 	var entries []*entity.CcEntry
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024) // Handle large lines
@@ -182,12 +212,22 @@ func (r *JSONLCcRepository) loadJSONLFile(filePath, projectPath, sessionID strin
 		var data ccData
 		if err := json.Unmarshal([]byte(line), &data); err != nil {
 			// Skip malformed lines
+			// fmt.Fprintf(os.Stderr, "[DEBUG] Failed to parse JSON at line %d: %v\n", lineNum, err)
 			continue
 		}
+
+		// Debug log token values
+		// fmt.Fprintf(os.Stderr, "[DEBUG] Line %d - Input tokens: %d, Output tokens: %d, Cache creation: %d, Cache read: %d\n",
+		// 	lineNum,
+		// 	data.Message.Usage.InputTokens,
+		// 	data.Message.Usage.OutputTokens,
+		// 	data.Message.Usage.CacheCreationInputTokens,
+		// 	data.Message.Usage.CacheReadInputTokens)
 
 		// Create deduplication key
 		dedupKey := r.createDedupKey(&data)
 		if dedupKey != "" && processedIDs[dedupKey] {
+			// fmt.Fprintf(os.Stderr, "[DEBUG] Skipping duplicate entry with key: %s\n", dedupKey)
 			continue // Skip duplicate
 		}
 		if dedupKey != "" {
@@ -197,9 +237,11 @@ func (r *JSONLCcRepository) loadJSONLFile(filePath, projectPath, sessionID strin
 		// Convert to domain entity
 		entry, err := r.convertToCcEntry(&data, projectPath, sessionID)
 		if err != nil {
+			// fmt.Fprintf(os.Stderr, "[DEBUG] Failed to convert to entry at line %d: %v\n", lineNum, err)
 			continue // Skip invalid entries
 		}
 
+		// fmt.Fprintf(os.Stderr, "[DEBUG] Created entry with total tokens: %d, timestamp: %v\n", entry.TotalTokens(), entry.Timestamp())
 		entries = append(entries, entry)
 	}
 
@@ -207,6 +249,7 @@ func (r *JSONLCcRepository) loadJSONLFile(filePath, projectPath, sessionID strin
 		return entries, fmt.Errorf("error reading file: %w", err)
 	}
 
+	// fmt.Fprintf(os.Stderr, "[DEBUG] Loaded %d entries from file: %s\n", len(entries), filePath)
 	return entries, nil
 }
 
@@ -297,6 +340,8 @@ func (r *JSONLCcRepository) FindByDateRange(start, end time.Time) ([]*entity.CcE
 		return nil, err
 	}
 
+	// fmt.Fprintf(os.Stderr, "[DEBUG] FindByDateRange - Start: %v, End: %v\n", start, end)
+
 	var result []*entity.CcEntry
 	for _, entry := range entries {
 		if entry.IsInDateRange(start, end) {
@@ -304,6 +349,7 @@ func (r *JSONLCcRepository) FindByDateRange(start, end time.Time) ([]*entity.CcE
 		}
 	}
 
+	// fmt.Fprintf(os.Stderr, "[DEBUG] FindByDateRange - Found %d entries in date range out of %d total\n", len(result), len(entries))
 	return result, nil
 }
 

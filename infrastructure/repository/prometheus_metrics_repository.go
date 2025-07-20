@@ -95,6 +95,37 @@ func (r *PrometheusMetricsRepository) SendTokenMetric(totalTokens int, hostLabel
 	return nil
 }
 
+// SendTokenMetricWithTimezone sends the total token count metric with timezone information
+func (r *PrometheusMetricsRepository) SendTokenMetricWithTimezone(totalTokens int, hostLabel string, metricName string, timezoneInfo repository.TimezoneInfo) error {
+	// Use provided hostLabel or fall back to configured one
+	if hostLabel == "" {
+		hostLabel = r.hostLabel
+	}
+
+	// Create context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(r.config.TimeoutSec)*time.Second)
+	defer cancel()
+
+	// Create labels for the metric including timezone information
+	labels := map[string]string{
+		"host":             hostLabel,
+		"timezone":         timezoneInfo.Name,
+		"timezone_offset":  timezoneInfo.Offset,
+		"detection_method": timezoneInfo.DetectionMethod,
+	}
+
+	// Send metric via Remote Write
+	err := r.rwClient.SendGaugeMetric(ctx, metricName, float64(totalTokens), labels)
+	if err != nil {
+		if ctx.Err() != nil {
+			return repository.NewMetricsRepositoryError("send", fmt.Errorf("timeout: %w", err))
+		}
+		return repository.NewMetricsRepositoryError("send", err)
+	}
+
+	return nil
+}
+
 // Close cleans up resources
 func (r *PrometheusMetricsRepository) Close() error {
 	// Remote Write client doesn't require explicit cleanup

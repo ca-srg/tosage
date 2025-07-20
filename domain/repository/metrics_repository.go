@@ -5,6 +5,9 @@ type MetricsRepository interface {
 	// SendTokenMetric sends the total token count metric with specified metric name
 	SendTokenMetric(totalTokens int, hostLabel string, metricName string) error
 
+	// SendTokenMetricWithTimezone sends the total token count metric with timezone information
+	SendTokenMetricWithTimezone(totalTokens int, hostLabel string, metricName string, timezoneInfo TimezoneInfo) error
+
 	// Close cleans up any resources used by the metrics repository
 	Close() error
 }

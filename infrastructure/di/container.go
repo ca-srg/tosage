@@ -10,6 +10,7 @@ import (
 	"github.com/ca-srg/tosage/infrastructure/config"
 	"github.com/ca-srg/tosage/infrastructure/logging"
 	infraRepo "github.com/ca-srg/tosage/infrastructure/repository"
+	"github.com/ca-srg/tosage/infrastructure/service"
 	"github.com/ca-srg/tosage/interface/controller"
 	"github.com/ca-srg/tosage/interface/presenter"
 	"github.com/ca-srg/tosage/usecase/impl"
@@ -28,6 +29,9 @@ type Container struct {
 	metricsRepo     repository.MetricsRepository
 	cursorTokenRepo repository.CursorTokenRepository
 	cursorAPIRepo   repository.CursorAPIRepository
+
+	// Services
+	timezoneService repository.TimezoneService
 
 	// Use Cases
 	ccService      usecase.CcService
@@ -176,11 +180,6 @@ func (c *Container) initConfig() error {
 		}
 	}
 
-	// Ensure TimeZone has a default value
-	if cfg.TimeZone == "" {
-		cfg.TimeZone = "Local"
-	}
-
 	c.config = cfg
 	return nil
 }
@@ -235,12 +234,14 @@ func (c *Container) initRepositories() error {
 
 // initDomainServices initializes domain services
 func (c *Container) initDomainServices() error {
+	// Initialize timezone service
+	c.timezoneService = service.NewTimezoneServiceImpl(c.config, c.logger)
 	return nil
 }
 
 // initUseCases initializes use case implementations
 func (c *Container) initUseCases() error {
-	c.ccService = impl.NewCcServiceImpl(c.ccRepo)
+	c.ccService = impl.NewCcServiceImpl(c.ccRepo, c.timezoneService)
 
 	// Initialize Status service
 	c.statusService = impl.NewStatusService()
@@ -303,6 +304,7 @@ func (c *Container) initPrometheus() error {
 		c.metricsRepo,
 		c.config.Prometheus,
 		c.CreateLogger("metrics"),
+		c.timezoneService,
 	)
 
 	return nil
@@ -438,6 +440,11 @@ func (c *Container) GetConfigService() usecase.ConfigService {
 // GetRestartManager returns the restart manager
 func (c *Container) GetRestartManager() usecase.RestartManager {
 	return c.restartManager
+}
+
+// GetTimezoneService returns the timezone service
+func (c *Container) GetTimezoneService() repository.TimezoneService {
+	return c.timezoneService
 }
 
 // Builder pattern for custom container configuration
@@ -581,6 +588,7 @@ func (b *ContainerBuilder) Build() (*Container, error) {
 		container.metricsRepo,
 		container.config.Prometheus,
 		container.CreateLogger("metrics"),
+		container.timezoneService,
 	)
 
 	// Initialize daemon components if configured

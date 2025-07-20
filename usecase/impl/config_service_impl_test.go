@@ -52,9 +52,6 @@ func TestConfigServiceImpl_GetConfig(t *testing.T) {
 	}
 
 	// デフォルト値を確認
-	if cfg.TimeZone != "Local" {
-		t.Errorf("Expected timezone 'Local', got '%s'", cfg.TimeZone)
-	}
 }
 
 func TestConfigServiceImpl_UpdateConfig(t *testing.T) {
@@ -84,7 +81,6 @@ func TestConfigServiceImpl_UpdateConfig(t *testing.T) {
 	// 新しい設定を作成
 	newConfig := config.DefaultConfig()
 	newConfig.ClaudePath = "/new/path"
-	newConfig.TimeZone = "Asia/Tokyo"
 	newConfig.Prometheus.Username = "testuser"
 	newConfig.Prometheus.Password = "testpass"
 
@@ -98,9 +94,6 @@ func TestConfigServiceImpl_UpdateConfig(t *testing.T) {
 	updatedConfig := service.GetConfig()
 	if updatedConfig.ClaudePath != "/new/path" {
 		t.Errorf("Expected ClaudePath '/new/path', got '%s'", updatedConfig.ClaudePath)
-	}
-	if updatedConfig.TimeZone != "Asia/Tokyo" {
-		t.Errorf("Expected TimeZone 'Asia/Tokyo', got '%s'", updatedConfig.TimeZone)
 	}
 
 	// ファイルに保存されたことを確認
@@ -317,7 +310,6 @@ func TestConfigServiceImpl_EnsureConfigExists(t *testing.T) {
 
 		// 既存の設定ファイルを作成
 		customConfig := config.DefaultConfig()
-		customConfig.TimeZone = "Asia/Tokyo"
 		customConfig.Prometheus.Username = "testuser"
 		customConfig.Prometheus.Password = "testpass"
 		err = configRepo.Save(customConfig)
@@ -333,7 +325,7 @@ func TestConfigServiceImpl_EnsureConfigExists(t *testing.T) {
 
 		// 設定ファイルが変更されていないことを確認
 		loadedConfig, _ := configRepo.Load()
-		if loadedConfig.TimeZone != "Asia/Tokyo" {
+		if loadedConfig.Prometheus.Username != "testuser" {
 			t.Error("Existing config should not be modified")
 		}
 	})
@@ -380,10 +372,6 @@ func TestConfigServiceImpl_CreateTemplateConfig(t *testing.T) {
 	}
 
 	// MinimalDefaultConfigの内容を確認
-	// TimeZoneは設定されない
-	if loadedConfig.TimeZone != "" {
-		t.Errorf("Expected empty timezone, got '%s'", loadedConfig.TimeZone)
-	}
 	// Prometheusの基本設定のみ確認
 	if loadedConfig.Prometheus == nil {
 		t.Error("Prometheus config should exist")
@@ -478,9 +466,6 @@ func TestConfigServiceImpl_LoadConfigWithFallback(t *testing.T) {
 		}
 
 		// デフォルト値が使用されることを確認
-		if cfg.TimeZone != "Local" {
-			t.Errorf("Expected default timezone 'Local', got '%s'", cfg.TimeZone)
-		}
 		if cfg.Prometheus.IntervalSec != 600 {
 			t.Errorf("Expected default interval 600, got %d", cfg.Prometheus.IntervalSec)
 		}
@@ -519,8 +504,8 @@ func TestConfigServiceImpl_LoadConfigWithFallback(t *testing.T) {
 		}
 
 		// デフォルト値が使用されることを確認
-		if cfg.TimeZone != "Local" {
-			t.Errorf("Expected default timezone 'Local', got '%s'", cfg.TimeZone)
+		if cfg.Prometheus != nil && cfg.Prometheus.IntervalSec == 0 {
+			t.Error("Expected Prometheus config to have default values")
 		}
 	})
 }
