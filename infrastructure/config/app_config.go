@@ -103,9 +103,6 @@ type AppConfig struct {
 	// ClaudePath is the custom path to Claude data directory
 	ClaudePath string `json:"claude_path,omitempty" env:"TOSAGE_CLAUDE_PATH"`
 
-	// TimeZone is the timezone for date calculations
-	TimeZone string `json:"timezone,omitempty" env:"TOSAGE_TIMEZONE,default=Local"`
-
 	// Prometheus holds Prometheus integration configuration
 	Prometheus *PrometheusConfig `json:"prometheus,omitempty"`
 
@@ -126,7 +123,6 @@ type AppConfig struct {
 func DefaultConfig() *AppConfig {
 	return &AppConfig{
 		ClaudePath: "",
-		TimeZone:   "Local",
 		Prometheus: &PrometheusConfig{
 			RemoteWriteURL: "http://localhost:9090/api/v1/write", // デフォルトのPrometheus URL
 			HostLabel:      "",
@@ -199,7 +195,6 @@ func (c *AppConfig) LoadFromEnv() error {
 	// Store original values to detect changes
 	original := &AppConfig{
 		ClaudePath: c.ClaudePath,
-		TimeZone:   c.TimeZone,
 	}
 	if c.Prometheus != nil {
 		original.Prometheus = &PrometheusConfig{
@@ -252,9 +247,6 @@ func (c *AppConfig) LoadFromEnv() error {
 	// Track environment variable overrides
 	if c.ClaudePath != original.ClaudePath && os.Getenv("TOSAGE_CLAUDE_PATH") != "" {
 		c.ConfigSources["ClaudePath"] = SourceEnvironment
-	}
-	if c.TimeZone != original.TimeZone && os.Getenv("TOSAGE_TIMEZONE") != "" {
-		c.ConfigSources["TimeZone"] = SourceEnvironment
 	}
 
 	// Special handling for Prometheus nested struct
@@ -554,7 +546,6 @@ func (c *AppConfig) validateLogging() error {
 // MarkDefaults marks all configuration fields as coming from defaults
 func (c *AppConfig) MarkDefaults() {
 	c.ConfigSources["ClaudePath"] = SourceDefault
-	c.ConfigSources["TimeZone"] = SourceDefault
 	c.ConfigSources["Prometheus.RemoteWriteURL"] = SourceDefault
 	c.ConfigSources["Prometheus.HostLabel"] = SourceDefault
 	c.ConfigSources["Prometheus.IntervalSec"] = SourceDefault
@@ -584,10 +575,6 @@ func (c *AppConfig) MergeJSONConfig(jsonConfig *AppConfig) {
 	if jsonConfig.ClaudePath != "" {
 		c.ClaudePath = jsonConfig.ClaudePath
 		c.ConfigSources["ClaudePath"] = SourceJSONFile
-	}
-	if jsonConfig.TimeZone != "" {
-		c.TimeZone = jsonConfig.TimeZone
-		c.ConfigSources["TimeZone"] = SourceJSONFile
 	}
 
 	// Merge Prometheus configuration

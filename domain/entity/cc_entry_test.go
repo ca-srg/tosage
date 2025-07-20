@@ -118,7 +118,9 @@ func TestCcEntry_DateMethods(t *testing.T) {
 	})
 
 	t.Run("DateAsTime", func(t *testing.T) {
-		expected := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
+		// DateAsTime now returns JST time for backward compatibility
+		jst, _ := time.LoadLocation("Asia/Tokyo")
+		expected := time.Date(2024, 1, 15, 0, 0, 0, 0, jst)
 		if got := entry.DateAsTime(); !got.Equal(expected) {
 			t.Errorf("DateAsTime() = %v, want %v", got, expected)
 		}

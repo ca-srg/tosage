@@ -41,6 +41,17 @@ type CcService interface {
 
 	// GetDateRange returns the date range of available data
 	GetDateRange() (start, end time.Time, err error)
+
+	// Timezone-aware methods
+
+	// CalculateDailyTokensInUserTimezone calculates total token count for a specific date in user's timezone
+	CalculateDailyTokensInUserTimezone(date time.Time) (int, error)
+
+	// CalculateTodayTokensInUserTimezone calculates total token count for today in user's timezone
+	CalculateTodayTokensInUserTimezone() (int, error)
+
+	// GetDateRangeInUserTimezone returns the date range of available data in user's timezone
+	GetDateRangeInUserTimezone() (start, end time.Time, err error)
 }
 
 // TokenStatsFilter defines filters for token statistics calculation

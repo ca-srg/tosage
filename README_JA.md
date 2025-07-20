@@ -76,9 +76,16 @@ tosage -d
 
 ### 必要要件
 
+#### ビルド要件
+
 - Go 1.21以上
 - macOS（デーモンモード用）
 - Make
+
+#### 実行時要件
+
+- メトリクス収集用のPrometheus Remote Write APIエンドポイント
+- ログ集約用のGrafana Loki（オプション、Promtail経由）
 
 ### ビルドコマンド
 

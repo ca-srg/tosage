@@ -78,9 +78,16 @@ tosage -d
 
 ### Requirements
 
+#### Build Requirements
+
 - Go 1.21 or higher
 - macOS (for daemon mode)
 - Make
+
+#### Runtime Requirements
+
+- Prometheus Remote Write API endpoint for metrics collection
+- Grafana Loki (optional) for log aggregation via Promtail
 
 ### Build Commands
 

@@ -11,36 +11,52 @@ import (
 
 // CcServiceImpl implements the CcService interface
 type CcServiceImpl struct {
-	ccRepo     repository.CcRepository
-	loadCcData *LoadCcDataUseCase
+	ccRepo         repository.CcRepository
+	loadCcData     *LoadCcDataUseCase
+	timezoneService repository.TimezoneService
 }
 
 // NewCcServiceImpl creates a new instance of CcServiceImpl
 func NewCcServiceImpl(
 	ccRepo repository.CcRepository,
+	timezoneService repository.TimezoneService,
 ) *CcServiceImpl {
 	return &CcServiceImpl{
-		ccRepo:     ccRepo,
-		loadCcData: NewLoadCcDataUseCase(ccRepo),
+		ccRepo:          ccRepo,
+		loadCcData:      NewLoadCcDataUseCase(ccRepo),
+		timezoneService: timezoneService,
 	}
 }
 
 // CalculateDailyTokens calculates total token count for a specific date
 func (s *CcServiceImpl) CalculateDailyTokens(date time.Time) (int, error) {
+	// If timezone service is available, use timezone-aware method
+	if s.timezoneService != nil {
+		return s.CalculateDailyTokensInUserTimezone(date)
+	}
+
 	// Get entries for the specific date
 	startOfDay := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
 	endOfDay := startOfDay.Add(24 * time.Hour)
+	
+	// fmt.Printf("[DEBUG] CalculateDailyTokens - Date: %v, StartOfDay: %v, EndOfDay: %v\n", date, startOfDay, endOfDay)
+	
 	entries, err := s.ccRepo.FindByDateRange(startOfDay, endOfDay)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get entries for date: %w", err)
 	}
 
+	// fmt.Printf("[DEBUG] Found %d entries for date range\n", len(entries))
+
 	// Calculate total tokens
 	totalTokens := 0
 	for _, entry := range entries {
-		totalTokens += entry.TotalTokens()
+		tokens := entry.TotalTokens()
+		// fmt.Printf("[DEBUG] Entry timestamp: %v, tokens: %d\n", entry.Timestamp(), tokens)
+		totalTokens += tokens
 	}
 
+	// fmt.Printf("[DEBUG] Total tokens for date: %d\n", totalTokens)
 	return totalTokens, nil
 }
 
@@ -494,4 +510,71 @@ func (s *CcServiceImpl) getFilteredEntries(
 	}
 
 	return collection.Entries(), nil
+}
+
+// Timezone-aware methods
+
+// CalculateDailyTokensInUserTimezone calculates total token count for a specific date in user's timezone
+func (s *CcServiceImpl) CalculateDailyTokensInUserTimezone(date time.Time) (int, error) {
+	if s.timezoneService == nil {
+		// Fall back to existing method if timezone service not available
+		return s.CalculateDailyTokens(date)
+	}
+
+	// Get user's timezone
+	userTimezone, err := s.timezoneService.GetConfiguredTimezone()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get user timezone: %w", err)
+	}
+
+	// Get day boundaries in user's timezone
+	startOfDay, endOfDay := s.timezoneService.GetDayBoundaries(date)
+
+	// Get entries for the date range
+	entries, err := s.ccRepo.FindByDateRange(startOfDay, endOfDay)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get entries for date: %w", err)
+	}
+
+	// Create collection with timezone context
+	collection := entity.NewCcEntryCollectionWithTimezone(entries, userTimezone)
+
+	// Calculate total tokens
+	totalTokens := 0
+	for _, entry := range collection.Entries() {
+		totalTokens += entry.TotalTokens()
+	}
+
+	return totalTokens, nil
+}
+
+// CalculateTodayTokensInUserTimezone calculates total token count for today in user's timezone
+func (s *CcServiceImpl) CalculateTodayTokensInUserTimezone() (int, error) {
+	if s.timezoneService == nil {
+		// Fall back to existing method if timezone service not available
+		return s.CalculateTodayTokens()
+	}
+
+	// Use current time in user's timezone
+	return s.CalculateDailyTokensInUserTimezone(time.Now())
+}
+
+// GetDateRangeInUserTimezone returns the date range of available data in user's timezone
+func (s *CcServiceImpl) GetDateRangeInUserTimezone() (start, end time.Time, err error) {
+	// Get the date range in UTC
+	start, end, err = s.GetDateRange()
+	if err != nil {
+		return start, end, err
+	}
+
+	if s.timezoneService == nil {
+		// Return as-is if timezone service not available
+		return start, end, nil
+	}
+
+	// Convert to user's timezone
+	start = s.timezoneService.ConvertToUserTime(start)
+	end = s.timezoneService.ConvertToUserTime(end)
+
+	return start, end, nil
 }

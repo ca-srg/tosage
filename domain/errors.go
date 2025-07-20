@@ -34,6 +34,9 @@ const (
 
 	// ErrCodeCursorDatabase indicates a Cursor database access error
 	ErrCodeCursorDatabase ErrorCode = "CURSOR_DATABASE_ERROR"
+
+	// ErrCodeTimezone indicates a timezone-related error
+	ErrCodeTimezone ErrorCode = "TIMEZONE_ERROR"
 )
 
 // DomainError represents a domain-specific error
@@ -186,4 +189,32 @@ func ErrCursorDatabaseWithCause(operation string, path string, err error) *Domai
 	return NewDomainErrorWithCause(ErrCodeCursorDatabase, fmt.Sprintf("cursor database error in %s", operation), err).
 		WithDetails("operation", operation).
 		WithDetails("path", path)
+}
+
+// Timezone-specific errors
+
+// ErrTimezone creates a timezone error
+func ErrTimezone(operation string, reason string) *DomainError {
+	return NewDomainError(ErrCodeTimezone, fmt.Sprintf("timezone error in %s: %s", operation, reason)).
+		WithDetails("operation", operation).
+		WithDetails("reason", reason)
+}
+
+// ErrTimezoneWithCause creates a timezone error with cause
+func ErrTimezoneWithCause(operation string, reason string, err error) *DomainError {
+	return NewDomainErrorWithCause(ErrCodeTimezone, fmt.Sprintf("timezone error in %s: %s", operation, reason), err).
+		WithDetails("operation", operation).
+		WithDetails("reason", reason)
+}
+
+// ErrTimezoneDetection creates a timezone detection error
+func ErrTimezoneDetection(fallbackLocation string) *DomainError {
+	return NewDomainError(ErrCodeTimezone, "failed to detect system timezone, using fallback").
+		WithDetails("fallback", fallbackLocation)
+}
+
+// ErrTimezoneParse creates a timezone parsing error
+func ErrTimezoneParse(timezoneName string, err error) *DomainError {
+	return NewDomainErrorWithCause(ErrCodeTimezone, fmt.Sprintf("failed to parse timezone: %s", timezoneName), err).
+		WithDetails("timezoneName", timezoneName)
 }
