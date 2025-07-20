@@ -46,10 +46,6 @@ flowchart TD
     CCS --> MS
     CS --> MS
     MS --> PROM
-    
-    style CC fill:#e1f5fe
-    style CA fill:#e1f5fe
-    style PROM fill:#fff3e0
 ```
 
 ## インストール
