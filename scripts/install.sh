@@ -409,12 +409,23 @@ install_application() {
             exit 0
         fi
         
-        # Backup existing installation
-        local backup_name="/Applications/tosage.app.backup.$(date +%Y%m%d%H%M%S)"
-        log_info "Backing up existing installation to: $backup_name"
+        # Stop running tosage app if exists
+        log_info "Checking for running tosage process..."
+        if pgrep -x "tosage" > /dev/null 2>&1; then
+            log_info "Stopping running tosage application..."
+            if ! pkill -x "tosage"; then
+                log_warning "Failed to stop tosage gracefully, trying force quit..."
+                pkill -9 -x "tosage" 2>/dev/null || true
+            fi
+            # Wait a moment for the process to fully terminate
+            sleep 2
+        fi
         
-        if ! sudo mv "$target_app" "$backup_name"; then
-            log_error "Failed to backup existing installation"
+        # Remove existing installation
+        log_info "Removing existing installation..."
+        
+        if ! sudo rm -rf "$target_app"; then
+            log_error "Failed to remove existing installation"
             hdiutil detach "$DMG_MOUNT_POINT" -quiet 2>/dev/null || true
             exit 1
         fi
