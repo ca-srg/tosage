@@ -50,6 +50,21 @@ cleanup() {
 # Set trap for cleanup
 trap cleanup EXIT INT TERM
 
+# Helper function for reading input (works with pipes)
+safe_read() {
+    local var_name="$1"
+    local read_args="${@:2}"
+    
+    if [[ -t 0 ]]; then
+        # Standard input is a terminal
+        read $read_args "$var_name"
+    else
+        # Standard input is not a terminal (e.g., piped)
+        # Use /dev/tty for user interaction
+        read $read_args "$var_name" < /dev/tty
+    fi
+}
+
 # Logging functions
 log_info() {
     echo -e "${COLOR_BLUE}[INFO]${COLOR_RESET} $1"
@@ -385,7 +400,7 @@ install_application() {
         # Ask user for confirmation
         echo ""
         log_prompt "Do you want to replace the existing installation? (y/N)"
-        read -r -n 1 replace_answer
+        safe_read replace_answer -r -n 1
         echo ""
         
         if [[ ! "$replace_answer" =~ ^[Yy]$ ]]; then
@@ -394,12 +409,23 @@ install_application() {
             exit 0
         fi
         
-        # Backup existing installation
-        local backup_name="/Applications/tosage.app.backup.$(date +%Y%m%d%H%M%S)"
-        log_info "Backing up existing installation to: $backup_name"
+        # Stop running tosage app if exists
+        log_info "Checking for running tosage process..."
+        if pgrep -x "tosage" > /dev/null 2>&1; then
+            log_info "Stopping running tosage application..."
+            if ! pkill -x "tosage"; then
+                log_warning "Failed to stop tosage gracefully, trying force quit..."
+                pkill -9 -x "tosage" 2>/dev/null || true
+            fi
+            # Wait a moment for the process to fully terminate
+            sleep 2
+        fi
         
-        if ! sudo mv "$target_app" "$backup_name"; then
-            log_error "Failed to backup existing installation"
+        # Remove existing installation
+        log_info "Removing existing installation..."
+        
+        if ! sudo rm -rf "$target_app"; then
+            log_error "Failed to remove existing installation"
             hdiutil detach "$DMG_MOUNT_POINT" -quiet 2>/dev/null || true
             exit 1
         fi
@@ -469,7 +495,7 @@ collect_configuration() {
     # Remote Write URL (required)
     while true; do
         log_prompt "Prometheus Remote Write URL (required): "
-        read -r prometheus_url
+        safe_read prometheus_url -r
         
         if [[ -z "$prometheus_url" ]]; then
             log_error "Prometheus URL is required"
@@ -488,7 +514,7 @@ collect_configuration() {
     # Username (required)
     while true; do
         log_prompt "Prometheus Username (required): "
-        read -r prometheus_username
+        safe_read prometheus_username -r
         
         if [[ -z "$prometheus_username" ]]; then
             log_error "Prometheus username is required"
@@ -501,7 +527,7 @@ collect_configuration() {
     # Password (required, hidden input)
     while true; do
         log_prompt "Prometheus Password (required, input hidden): "
-        read -r -s prometheus_password
+        safe_read prometheus_password -r -s
         echo "" # New line after hidden input
         
         if [[ -z "$prometheus_password" ]]; then
@@ -514,18 +540,18 @@ collect_configuration() {
     
     # Host label (optional)
     log_prompt "Host Label (optional, press Enter to skip): "
-    read -r prometheus_host_label
+    safe_read prometheus_host_label -r
     
     # Interval (optional, with default)
     log_prompt "Metrics Interval in seconds (optional, default: 600): "
-    read -r input_interval
+    safe_read input_interval -r
     if [[ -n "$input_interval" ]] && [[ "$input_interval" =~ ^[0-9]+$ ]]; then
         prometheus_interval="$input_interval"
     fi
     
     # Timeout (optional, with default)
     log_prompt "Request Timeout in seconds (optional, default: 30): "
-    read -r input_timeout
+    safe_read input_timeout -r
     if [[ -n "$input_timeout" ]] && [[ "$input_timeout" =~ ^[0-9]+$ ]]; then
         prometheus_timeout="$input_timeout"
     fi
@@ -536,7 +562,7 @@ collect_configuration() {
     
     # Promtail URL (optional)
     log_prompt "Promtail Logs URL (optional): "
-    read -r promtail_url
+    safe_read promtail_url -r
     
     # Only ask for credentials if URL is provided
     if [[ -n "$promtail_url" ]]; then
@@ -547,12 +573,12 @@ collect_configuration() {
         else
             # Username
             log_prompt "Promtail Username (optional): "
-            read -r promtail_username
+            safe_read promtail_username -r
             
             # Password (hidden input)
             if [[ -n "$promtail_username" ]]; then
                 log_prompt "Promtail Password (optional, input hidden): "
-                read -r -s promtail_password
+                safe_read promtail_password -r -s
                 echo "" # New line after hidden input
             fi
         fi
@@ -598,7 +624,7 @@ create_config_file() {
         # Ask user for confirmation
         echo ""
         log_prompt "Do you want to overwrite the existing configuration? (y/N)"
-        read -r -n 1 overwrite_answer
+        safe_read overwrite_answer -r -n 1
         echo ""
         
         if [[ ! "$overwrite_answer" =~ ^[Yy]$ ]]; then
@@ -725,7 +751,7 @@ main() {
     # Ask if user wants to configure now
     echo ""
     log_prompt "Would you like to configure tosage now? (Y/n)"
-    read -r -n 1 configure_answer
+    safe_read configure_answer -r -n 1
     echo ""
     
     if [[ "$configure_answer" =~ ^[Nn]$ ]]; then
