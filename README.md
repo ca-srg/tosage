@@ -50,6 +50,18 @@ flowchart TD
     MS --> PROM
 ```
 
+### Grafana Dashboard
+
+Monitor your token usage with our pre-configured Grafana dashboard:
+
+![Grafana Dashboard](./assets/grafana.png)
+
+Import the [Grafana dashboard configuration](./assets/grafana.json) to visualize:
+- Token usage per person per hour
+- Team-wide token usage trends
+- Daily token totals
+- Tool breakdown (Claude Code vs Cursor)
+
 ## Installation
 
 ### Quick Installation (Recommended)

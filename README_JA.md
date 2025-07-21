@@ -48,6 +48,18 @@ flowchart TD
     MS --> PROM
 ```
 
+### Grafanaダッシュボード
+
+事前設定済みのGrafanaダッシュボードでトークン使用量を監視:
+
+![Grafana Dashboard](./assets/grafana.png)
+
+[Grafanaダッシュボード設定](./assets/grafana.json)をインポートして以下を可視化:
+- 1時間あたりの個人別トークン使用量
+- チーム全体のトークン使用傾向
+- 日別トークン合計
+- ツール別内訳（Claude Code vs Cursor）
+
 ## インストール
 
 ### クイックインストール（推奨）
