@@ -50,6 +50,51 @@ flowchart TD
 
 ## インストール
 
+### クイックインストール（推奨）
+
+tosageをインストールする最も簡単な方法は、自動インストールスクリプトを使用することです：
+
+```bash
+# インストーラーをダウンロードして実行
+curl -fsSL https://raw.githubusercontent.com/ca-srg/tosage/main/scripts/install.sh | bash
+```
+
+または、最初にスクリプトをダウンロードして確認する場合：
+
+```bash
+# スクリプトをダウンロード
+curl -fsSL https://raw.githubusercontent.com/ca-srg/tosage/main/scripts/install.sh -o install-tosage.sh
+
+# スクリプトを確認
+less install-tosage.sh
+
+# インストーラーを実行
+bash install-tosage.sh
+```
+
+インストールスクリプトは以下を実行します：
+1. お使いのアーキテクチャ（arm64/x86_64）に応じた最新のtosage DMGをダウンロード
+2. `/Applications/tosage.app`にアプリケーションをインストール
+3. 対話的に設定をガイド
+4. `~/.config/tosage/config.json`に設定ファイルを作成
+
+#### 前提条件
+
+- macOS（インストーラーはmacOS専用）
+- `curl`と`jq`（通常はプリインストール済み）
+- GitHubからダウンロードするためのインターネット接続
+- /Applicationsにインストールするための管理者パスワード
+
+#### 必要な設定値
+
+インストール中に以下の項目を入力します：
+- **Prometheus リモートライトURL**（必須）：PrometheusエンドポイントURL（例：`https://prometheus.example.com/api/prom/push`）
+- **Prometheus ユーザー名**（必須）：認証用ユーザー名
+- **Prometheus パスワード**（必須）：認証用パスワード
+- **ホストラベル**（任意）：メトリクス用のカスタムラベル
+- **メトリクス間隔**（任意）：メトリクス送信間隔（秒）（デフォルト：600）
+- **Promtail設定**（任意）：ログ転送用
+
 ### ビルド済みバイナリ
 
 [GitHub Releases](https://github.com/ca-srg/tosage/releases)から最新リリースをダウンロードしてください。
@@ -271,6 +316,50 @@ Cursor APIを使用して以下を取得:
 - macOSのみ（システムトレイにCGOを使用）
 - 時刻計算はJST（アジア/東京）タイムゾーンを使用
 - 設定ファイル: `~/.config/tosage/config.json`
+
+## トラブルシューティング
+
+### インストールの問題
+
+#### "GitHub APIレート制限を超えました"
+- レート制限がリセットされるまで待つ（通常1時間）
+- または[GitHub Releases](https://github.com/ca-srg/tosage/releases)からDMGを手動でダウンロード
+
+#### "DMGのマウントに失敗しました"
+- 十分なディスク容量があることを確認
+- 他のDMGがすでにマウントされていないか確認
+- FinderからDMGを手動でマウントしてみる
+
+#### インストール中の"アクセスが拒否されました"
+- インストーラーは/Applicationsにコピーするため管理者権限が必要
+- `sudo`でプロンプトが表示されたらパスワードを入力
+
+#### "アーキテクチャ用のDMGが見つかりません"
+- お使いのmacOSバージョンがサポートされているか確認
+- Apple SiliconのMacの場合、arm64ビルドを使用していることを確認
+- Intel Macの場合、x86_64ビルドはまだ利用できない可能性があります
+
+### 設定の問題
+
+#### "無効なURL形式"
+- PrometheusのURLにプロトコル（http://またはhttps://）が含まれていることを確認
+- 例：`https://prometheus.example.com/api/prom/push`
+
+#### "設定ファイルのアクセスが拒否されました"
+- 設定ファイルはセキュアな権限（600）で作成されます
+- 手動で編集する必要がある場合は`sudo`を使用
+
+### 実行時の問題
+
+#### "tosage.appは壊れているため開くことができません"
+- これはmacOS Gatekeeperの問題です
+- インストーラーは自動的に検疫属性を削除します
+- 問題が続く場合は次を実行：`sudo xattr -cr /Applications/tosage.app`
+
+#### "Claude Codeのデータが見つかりません"
+- Claude Codeが少なくとも一度実行されていることを確認
+- データが検索ディレクトリのいずれかに存在することを確認
+- 場所については「データソース」セクションを参照
 
 ## TODO
 

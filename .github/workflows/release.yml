@@ -360,30 +360,14 @@ jobs:
           ## What's Changed
           - See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details
           
-          ## Configuration
+          ## Quick Installation (Recommended)
+          
+          The easiest way to install tosage is using our automated installation script:
+
           ```bash
-          # 1. Run application to generate config.json
-
-          # 2. Modify config.json
-          $ cat ~/.config/tosage/config.json
-          {
-            "prometheus": {
-              "remote_write_url": "https://<prometheus_url>/api/prom/push",
-              "username": "",
-              "password": ""
-            },
-            "logging": {
-              "promtail": {
-                "url": "https://<logs_url>",
-                "username": "",
-                "password": ""
-              }
-            }
-          }
-
-          # 3. Run again
+          curl -fsSL https://raw.githubusercontent.com/ca-srg/tosage/main/scripts/install.sh | bash
           ```
-    
+
     - name: Cleanup
       if: always()
       run: |

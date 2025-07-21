@@ -131,3 +131,9 @@ When configured, sends metrics to Prometheus via remote write API:
 - Time calculations use JST (Asia/Tokyo) timezone
 - Daemon mode requires macOS system tray support
 - Configuration file: `~/.config/tosage/config.json`
+
+## Commit, PR, etc.
+
+- Commit message should be in English
+- PR title should be in English
+- PR description should be in English

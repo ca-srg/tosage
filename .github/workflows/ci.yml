@@ -1,12 +1,36 @@
 name: CI
 
 on:
-  push:
-    branches: [ main, develop ]
   pull_request:
+    types: [opened, synchronize, labeled]
     branches: [ main ]
 
 jobs:
+  label:
+    name: Label
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR labels
+        run: |
+          labels=$(echo '${{ toJson(github.event.pull_request.labels.*.name) }}' | jq -r '.[]')
+          echo "PR labels: $labels"
+          
+          has_version_label=false
+          for label in $labels; do
+            if [[ "$label" == "major" || "$label" == "minor" || "$label" == "patch" ]]; then
+              has_version_label=true
+              echo "Found version label: $label"
+              break
+            fi
+          done
+          
+          if [[ "$has_version_label" == "false" ]]; then
+            echo "Error: PR must have one of the following labels: major, minor, patch"
+            exit 1
+          fi
+          
+          echo "Version label check passed"
+      
   test:
     name: Test
     runs-on: macos-latest
