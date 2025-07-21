@@ -1,21 +1,21 @@
-## 概要
-<!-- このPRで何を変更したか簡潔に説明してください -->
+## Overview
+<!-- Please briefly describe what changes are made in this PR -->
 
-## 変更内容
-<!-- 主な変更点を箇条書きで記載してください -->
+## Changes
+<!-- List the main changes in bullet points -->
 - 
 - 
 - 
 
-## 動作確認
-<!-- どのような動作確認を行ったか記載してください -->
-- [ ] ローカルでビルドが成功する
-- [ ] テストが全て通過する
-- [ ] 新機能/修正が期待通りに動作する
+## Testing
+<!-- Describe what testing was performed -->
+- [ ] Local build succeeds
+- [ ] All tests pass
+- [ ] New features/fixes work as expected
 
-## 関連Issue
-<!-- 関連するIssueがあれば記載してください -->
+## Related Issues
+<!-- Link related issues if any -->
 - 
 
-## その他
-<!-- レビュアーに伝えたいことがあれば記載してください -->
+## Additional Notes
+<!-- Any additional information for reviewers -->

@@ -52,6 +52,51 @@ flowchart TD
 
 ## Installation
 
+### Quick Installation (Recommended)
+
+The easiest way to install tosage is using our automated installation script:
+
+```bash
+# Download and run the installer
+curl -fsSL https://raw.githubusercontent.com/ca-srg/tosage/main/scripts/install.sh | bash
+```
+
+Or download the script first to review it:
+
+```bash
+# Download the script
+curl -fsSL https://raw.githubusercontent.com/ca-srg/tosage/main/scripts/install.sh -o install-tosage.sh
+
+# Review the script
+less install-tosage.sh
+
+# Run the installer
+bash install-tosage.sh
+```
+
+The installation script will:
+1. Download the latest tosage DMG for your architecture (arm64/x86_64)
+2. Install the application to `/Applications/tosage.app`
+3. Guide you through configuration setup interactively
+4. Create the configuration file at `~/.config/tosage/config.json`
+
+#### Prerequisites
+
+- macOS (the installer is macOS-only)
+- `curl` and `jq` (usually pre-installed)
+- Internet connection to download from GitHub
+- Administrator password (for installing to /Applications)
+
+#### Configuration Values Needed
+
+During installation, you'll be prompted for:
+- **Prometheus Remote Write URL** (required): Your Prometheus endpoint (e.g., `https://prometheus.example.com/api/prom/push`)
+- **Prometheus Username** (required): Authentication username
+- **Prometheus Password** (required): Authentication password
+- **Host Label** (optional): Custom label for metrics
+- **Metrics Interval** (optional): How often to send metrics in seconds (default: 600)
+- **Promtail Configuration** (optional): For log forwarding
+
 ### Pre-built Binaries
 
 Download the latest release from [GitHub Releases](https://github.com/ca-srg/tosage/releases).
@@ -273,6 +318,50 @@ Uses Cursor API to fetch:
 - macOS only (uses CGO for system tray)
 - Time calculations use JST (Asia/Tokyo) timezone
 - Configuration file: `~/.config/tosage/config.json`
+
+## Troubleshooting
+
+### Installation Issues
+
+#### "GitHub API rate limit exceeded"
+- Wait for the rate limit to reset (usually 1 hour)
+- Or download the DMG manually from [GitHub Releases](https://github.com/ca-srg/tosage/releases)
+
+#### "Failed to mount DMG"
+- Ensure you have sufficient disk space
+- Check if another DMG is already mounted
+- Try manually mounting the DMG from Finder
+
+#### "Permission denied" during installation
+- The installer requires administrator privileges to copy to /Applications
+- Enter your password when prompted by `sudo`
+
+#### "No DMG found for architecture"
+- Check that your macOS version is supported
+- For Apple Silicon Macs, ensure you're using arm64 builds
+- For Intel Macs, x86_64 builds may not be available yet
+
+### Configuration Issues
+
+#### "Invalid URL format"
+- Ensure your Prometheus URL includes the protocol (http:// or https://)
+- Example: `https://prometheus.example.com/api/prom/push`
+
+#### "Configuration file permission denied"
+- The config file is created with secure permissions (600)
+- Use `sudo` if you need to manually edit it
+
+### Runtime Issues
+
+#### "tosage.app is damaged and can't be opened"
+- This is a macOS Gatekeeper issue
+- The installer automatically removes quarantine attributes
+- If the issue persists, run: `sudo xattr -cr /Applications/tosage.app`
+
+#### "Cannot find Claude Code data"
+- Ensure Claude Code has been run at least once
+- Check that data exists in one of the search directories
+- See "Data Sources" section for locations
 
 ## TODO
 
