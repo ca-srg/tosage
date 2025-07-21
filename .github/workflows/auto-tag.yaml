@@ -3,10 +3,8 @@ name: Auto.Tag
 permissions:
   contents: write
 
-on: 
-  pull_request:
-    branches: 
-      - main
+on:
+  - push
 
 jobs:
   tag:
