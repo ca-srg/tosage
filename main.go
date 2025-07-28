@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/ca-srg/tosage/domain"
+	infraConfig "github.com/ca-srg/tosage/infrastructure/config"
 	"github.com/ca-srg/tosage/infrastructure/di"
 )
 
@@ -40,6 +41,22 @@ func main() {
 	runDaemon := false
 	if *daemonMode {
 		runDaemon = true
+		// Force enable daemon in config when --daemon flag is used
+		if config.Daemon == nil {
+			config.Daemon = &infraConfig.DaemonConfig{
+				Enabled:      true,
+				StartAtLogin: false,
+				LogPath:      "/tmp/tosage.log",
+				PidFile:      "/tmp/tosage.pid",
+			}
+		} else {
+			config.Daemon.Enabled = true
+		}
+		// Re-initialize daemon components
+		if err := container.InitDaemonComponents(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to initialize daemon components: %v\n", err)
+			os.Exit(1)
+		}
 	} else if !*cliMode && config.Daemon != nil && config.Daemon.Enabled {
 		runDaemon = true
 	}

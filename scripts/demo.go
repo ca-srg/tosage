@@ -40,6 +40,9 @@ var (
 		"kimura", "hayashi", "shimizu", "yamazaki", "mori", "abe",
 	}
 	hostPatterns = []string{"%s-macbook", "%s-mac", "%s-%s", "%ss-mac"}
+	
+	// ローカルランダムジェネレータ
+	rng *rand.Rand
 )
 
 // Config はデモの設定を保持
@@ -76,9 +79,9 @@ func loadConfig() *Config {
 
 // generateHostname はランダムなホスト名を生成
 func generateHostname() string {
-	firstName := firstNames[rand.Intn(len(firstNames))]
-	lastName := lastNames[rand.Intn(len(lastNames))]
-	pattern := hostPatterns[rand.Intn(len(hostPatterns))]
+	firstName := firstNames[rng.Intn(len(firstNames))]
+	lastName := lastNames[rng.Intn(len(lastNames))]
+	pattern := hostPatterns[rng.Intn(len(hostPatterns))]
 
 	switch pattern {
 	case "%s-%s":
@@ -92,9 +95,9 @@ func generateHostname() string {
 
 // generateTokenCount はランダムなトークン数を生成（累積的に増加）
 func generateTokenCount(hostID, iteration int) int {
-	baseTokens := 1000 + (hostID * 100) + rand.Intn(500)
-	timeIncrease := iteration * (10000 + rand.Intn(40001))
-	randomVariation := rand.Intn(200)
+	baseTokens := 1000 + (hostID * 100) + rng.Intn(500)
+	timeIncrease := iteration * (10000 + rng.Intn(40001))
+	randomVariation := rng.Intn(200)
 
 	total := baseTokens + timeIncrease + randomVariation
 
@@ -229,7 +232,11 @@ func sendMetric(ctx context.Context, cfg *Config, hostname, metricName string, v
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("[WARN] failed to close response body: %v", err)
+		}
+	}()
 
 	// レスポンスを確認
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
@@ -319,8 +326,8 @@ func main() {
 		cancel()
 	}()
 
-	// 乱数シードを初期化
-	rand.Seed(time.Now().UnixNano())
+	// ローカルランダムジェネレータを初期化
+	rng = rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	// ホスト名を事前に生成
 	hostnames := make([]string, cfg.NumHosts)
