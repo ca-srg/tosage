@@ -447,6 +447,11 @@ func (c *Container) GetTimezoneService() repository.TimezoneService {
 	return c.timezoneService
 }
 
+// InitDaemonComponents initializes daemon components on demand
+func (c *Container) InitDaemonComponents() error {
+	return c.initDaemon()
+}
+
 // Builder pattern for custom container configuration
 
 // ContainerBuilder builds a custom container
