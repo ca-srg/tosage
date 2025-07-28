@@ -122,8 +122,8 @@ jobs:
             type=semver,pattern={{major}}
             # Branch name
             type=ref,event=branch
-            # SHA
-            type=sha,prefix={{branch}}-,format=short
+            # SHA tag (always with sha- prefix)
+            type=sha,prefix=sha-,format=short
           labels: |
             org.opencontainers.image.title=tosage
             org.opencontainers.image.description=Token usage tracking for Claude Code and Cursor
@@ -162,8 +162,8 @@ jobs:
         run: |
           # Extract the SHA-based tag from metadata output
           TAGS="${{ steps.meta.outputs.tags }}"
-          # Look for tags with branch-sha format (e.g., main-5648a2e)
-          SHA_TAG=$(echo "$TAGS" | grep -E "\w+-[a-f0-9]{7}$" | head -n1)
+          # Look for tags with sha- prefix (e.g., sha-a8fc84f)
+          SHA_TAG=$(echo "$TAGS" | grep -E "sha-[a-f0-9]{7}" | head -n1)
           if [ -z "$SHA_TAG" ]; then
             echo "Error: Could not find SHA-based tag"
             echo "Available tags: $TAGS"
