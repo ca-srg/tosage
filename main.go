@@ -11,14 +11,17 @@ import (
 	"github.com/ca-srg/tosage/domain"
 	infraConfig "github.com/ca-srg/tosage/infrastructure/config"
 	"github.com/ca-srg/tosage/infrastructure/di"
+	"github.com/ca-srg/tosage/interface/cli"
 )
 
 func main() {
 	// Parse command line flags
 	var (
-		cliMode    = flag.Bool("cli", false, "Run in CLI mode (default is daemon mode on macOS)")
-		daemonMode = flag.Bool("daemon", false, "Run in daemon mode (macOS only)")
-		debugMode  = flag.Bool("debug", false, "Enable debug logging to stdout")
+		cliMode         = flag.Bool("cli", false, "Run in CLI mode (default is daemon mode on macOS)")
+		daemonMode      = flag.Bool("daemon", false, "Run in daemon mode (macOS only)")
+		debugMode       = flag.Bool("debug", false, "Enable debug logging to stdout")
+		includeBedrock  = flag.Bool("bedrock", false, "Include AWS Bedrock usage metrics (requires AWS credentials)")
+		includeVertexAI = flag.Bool("vertex-ai", false, "Include Google Vertex AI usage metrics (requires Google Cloud credentials)")
 	)
 	flag.Parse()
 
@@ -26,6 +29,12 @@ func main() {
 	opts := []di.ContainerOption{}
 	if *debugMode {
 		opts = append(opts, di.WithDebugMode(true))
+	}
+	if *includeBedrock {
+		opts = append(opts, di.WithBedrockEnabled(true))
+	}
+	if *includeVertexAI {
+		opts = append(opts, di.WithVertexAIEnabled(true))
 	}
 
 	container, err := di.NewContainer(opts...)
@@ -61,6 +70,12 @@ func main() {
 		runDaemon = true
 	}
 
+	// Daemon mode is not supported when Bedrock or Vertex AI flags are set
+	if runDaemon && (*includeBedrock || *includeVertexAI) {
+		fmt.Fprintf(os.Stderr, "Daemon mode is not supported when --bedrock or --vertex-ai flags are set\n")
+		os.Exit(1)
+	}
+
 	// Run in appropriate mode
 	if runDaemon {
 		runDaemonMode(container)
@@ -92,7 +107,19 @@ func handleShutdown(metricsService interface{ StopPeriodicMetrics() error }, log
 // runCLIMode runs the application in CLI mode
 func runCLIMode(container *di.Container) {
 	// Get services
-	cliController := container.GetCLIController()
+	cliControllerIface := container.GetCLIController()
+	cliController, ok := cliControllerIface.(*cli.CLIController)
+	if !ok || cliController == nil {
+		fmt.Fprintf(os.Stderr, "CLI controller not available\n")
+		os.Exit(1)
+	}
+
+	// Skip Claude Code and Cursor metrics if Bedrock or Vertex AI is enabled
+	config := container.GetConfig()
+	if (config.Bedrock != nil && config.Bedrock.Enabled) || (config.VertexAI != nil && config.VertexAI.Enabled) {
+		cliController.SetSkipCCMetrics(true)
+	}
+
 	metricsService := container.GetMetricsService()
 
 	// Get logger

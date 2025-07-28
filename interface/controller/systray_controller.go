@@ -14,15 +14,19 @@ import (
 
 // SystrayController manages the system tray menu and interactions
 type SystrayController struct {
-	ccService      usecase.CcService
-	statusService  usecase.StatusService
-	metricsService usecase.MetricsService
-	configService  usecase.ConfigService
+	ccService       usecase.CcService
+	statusService   usecase.StatusService
+	metricsService  usecase.MetricsService
+	configService   usecase.ConfigService
+	bedrockService  usecase.BedrockService
+	vertexAIService usecase.VertexAIService
 
 	// Menu items
 	sendNowItem      *systray.MenuItem
 	settingsItem     *systray.MenuItem
 	startAtLoginItem *systray.MenuItem
+	bedrockItem      *systray.MenuItem
+	vertexAIItem     *systray.MenuItem
 	hideFromDockItem *systray.MenuItem
 	quitItem         *systray.MenuItem
 
@@ -30,6 +34,8 @@ type SystrayController struct {
 	sendNowChan      chan struct{}
 	settingsChan     chan struct{}
 	startAtLoginChan chan struct{}
+	bedrockChan      chan struct{}
+	vertexAIChan     chan struct{}
 	hideFromDockChan chan struct{}
 	quitChan         chan struct{}
 
@@ -43,6 +49,8 @@ func NewSystrayController(
 	statusService usecase.StatusService,
 	metricsService usecase.MetricsService,
 	configService usecase.ConfigService,
+	bedrockService usecase.BedrockService,
+	vertexAIService usecase.VertexAIService,
 ) *SystrayController {
 	loginItemManager, _ := NewLoginItemManager()
 
@@ -51,9 +59,13 @@ func NewSystrayController(
 		statusService:    statusService,
 		metricsService:   metricsService,
 		configService:    configService,
+		bedrockService:   bedrockService,
+		vertexAIService:  vertexAIService,
 		sendNowChan:      make(chan struct{}),
 		settingsChan:     make(chan struct{}),
 		startAtLoginChan: make(chan struct{}),
+		bedrockChan:      make(chan struct{}),
+		vertexAIChan:     make(chan struct{}),
 		hideFromDockChan: make(chan struct{}),
 		quitChan:         make(chan struct{}),
 		loginItemManager: loginItemManager,
@@ -72,6 +84,14 @@ func (s *SystrayController) OnReady() {
 	s.settingsItem = systray.AddMenuItem("Settings...", "Open settings dialog")
 	s.startAtLoginItem = systray.AddMenuItemCheckbox("Start at Login", "Start tosage when you log in", false)
 	s.hideFromDockItem = systray.AddMenuItemCheckbox("Hide from Dock", "Hide tosage from the macOS Dock", false)
+
+	// Bedrock tracking checkbox
+	bedrockEnabled := s.bedrockService != nil && s.bedrockService.IsEnabled()
+	s.bedrockItem = systray.AddMenuItemCheckbox("Include Bedrock Metrics", "Include AWS Bedrock usage in metrics (requires AWS credentials)", bedrockEnabled)
+
+	// Vertex AI tracking checkbox
+	vertexAIEnabled := s.vertexAIService != nil && s.vertexAIService.IsEnabled()
+	s.vertexAIItem = systray.AddMenuItemCheckbox("Include Vertex AI Metrics", "Include Google Cloud Vertex AI usage in metrics (requires GCP credentials)", vertexAIEnabled)
 
 	// Set initial state for start at login
 	if s.loginItemManager != nil {
@@ -99,6 +119,8 @@ func (s *SystrayController) OnExit() {
 	close(s.sendNowChan)
 	close(s.settingsChan)
 	close(s.startAtLoginChan)
+	close(s.bedrockChan)
+	close(s.vertexAIChan)
 	close(s.hideFromDockChan)
 	close(s.quitChan)
 }
@@ -115,6 +137,12 @@ func (s *SystrayController) handleMenuClicks() {
 
 		case <-s.startAtLoginItem.ClickedCh:
 			s.handleStartAtLoginToggle()
+
+		case <-s.bedrockItem.ClickedCh:
+			s.handleBedrockToggle()
+
+		case <-s.vertexAIItem.ClickedCh:
+			s.handleVertexAIToggle()
 
 		case <-s.hideFromDockItem.ClickedCh:
 			s.handleHideFromDockToggle()
@@ -139,6 +167,16 @@ func (s *SystrayController) GetSettingsChannel() <-chan struct{} {
 // GetQuitChannel returns the channel that signals when "Quit" is clicked
 func (s *SystrayController) GetQuitChannel() <-chan struct{} {
 	return s.quitChan
+}
+
+// GetBedrockChannel returns the channel that signals when Bedrock checkbox is toggled
+func (s *SystrayController) GetBedrockChannel() <-chan struct{} {
+	return s.bedrockChan
+}
+
+// GetVertexAIChannel returns the channel that signals when Vertex AI checkbox is toggled
+func (s *SystrayController) GetVertexAIChannel() <-chan struct{} {
+	return s.vertexAIChan
 }
 
 // UpdateStatus updates the status display in the menu
@@ -216,6 +254,78 @@ func (s *SystrayController) handleStartAtLoginToggle() {
 		s.startAtLoginItem.Uncheck()
 		s.ShowNotification("Success", "tosage will not start at login")
 	}
+}
+
+// handleBedrockToggle handles toggling the Bedrock tracking setting
+func (s *SystrayController) handleBedrockToggle() {
+	if s.bedrockService == nil {
+		s.ShowNotification("Error", "Bedrock service not available")
+		return
+	}
+
+	// Check current state
+	currentState := s.bedrockService.IsEnabled()
+	newState := !currentState
+
+	// Update configuration through config service
+	// This is a simplified implementation - in practice, you'd update the config file
+	if newState {
+		// Check AWS credentials before enabling
+		if err := s.bedrockService.CheckConnection(); err != nil {
+			s.ShowNotification("Error", "AWS credentials not configured or CloudWatch access denied")
+			// Revert checkbox state
+			if currentState {
+				s.bedrockItem.Check()
+			} else {
+				s.bedrockItem.Uncheck()
+			}
+			return
+		}
+		s.bedrockItem.Check()
+		s.ShowNotification("Success", "Bedrock metrics enabled")
+	} else {
+		s.bedrockItem.Uncheck()
+		s.ShowNotification("Success", "Bedrock metrics disabled")
+	}
+
+	// Signal configuration change
+	s.bedrockChan <- struct{}{}
+}
+
+// handleVertexAIToggle handles toggling the Vertex AI tracking setting
+func (s *SystrayController) handleVertexAIToggle() {
+	if s.vertexAIService == nil {
+		s.ShowNotification("Error", "Vertex AI service not available")
+		return
+	}
+
+	// Check current state
+	currentState := s.vertexAIService.IsEnabled()
+	newState := !currentState
+
+	// Update configuration through config service
+	// This is a simplified implementation - in practice, you'd update the config file
+	if newState {
+		// Check GCP credentials before enabling
+		if err := s.vertexAIService.CheckConnection(); err != nil {
+			s.ShowNotification("Error", "GCP credentials not configured or Cloud Monitoring access denied")
+			// Revert checkbox state
+			if currentState {
+				s.vertexAIItem.Check()
+			} else {
+				s.vertexAIItem.Uncheck()
+			}
+			return
+		}
+		s.vertexAIItem.Check()
+		s.ShowNotification("Success", "Vertex AI metrics enabled")
+	} else {
+		s.vertexAIItem.Uncheck()
+		s.ShowNotification("Success", "Vertex AI metrics disabled")
+	}
+
+	// Signal configuration change
+	s.vertexAIChan <- struct{}{}
 }
 
 // handleHideFromDockToggle handles toggling the hide from dock setting
