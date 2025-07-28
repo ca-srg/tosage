@@ -38,4 +38,7 @@ type ConfigService interface {
 
 	// LoadConfigWithFallback はエラー耐性のある設定読み込みを行う
 	LoadConfigWithFallback() (*config.AppConfig, error)
+
+	// LoadConfigWithMigration はマイグレーション対応の設定読み込みを行う
+	LoadConfigWithMigration() (*config.AppConfig, error)
 }

@@ -112,10 +112,10 @@ func TestPrometheusMetricsRepository_WithAuth(t *testing.T) {
 		{
 			name: "basic auth",
 			config: &config.PrometheusConfig{
-				RemoteWriteURL: "placeholder",
-				Username:       "testuser",
-				Password:       "testpass",
-				TimeoutSec:     30,
+				RemoteWriteURL:      "placeholder",
+				RemoteWriteUsername: "testuser",
+				RemoteWritePassword: "testpass",
+				TimeoutSec:          30,
 			},
 			expectedHeader: "Authorization",
 			expectedValue:  "Basic dGVzdHVzZXI6dGVzdHBhc3M=", // base64("testuser:testpass")

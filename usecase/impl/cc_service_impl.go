@@ -39,24 +39,18 @@ func (s *CcServiceImpl) CalculateDailyTokens(date time.Time) (int, error) {
 	startOfDay := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
 	endOfDay := startOfDay.Add(24 * time.Hour)
 
-	// fmt.Printf("[DEBUG] CalculateDailyTokens - Date: %v, StartOfDay: %v, EndOfDay: %v\n", date, startOfDay, endOfDay)
-
 	entries, err := s.ccRepo.FindByDateRange(startOfDay, endOfDay)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get entries for date: %w", err)
 	}
 
-	// fmt.Printf("[DEBUG] Found %d entries for date range\n", len(entries))
-
 	// Calculate total tokens
 	totalTokens := 0
 	for _, entry := range entries {
 		tokens := entry.TotalTokens()
-		// fmt.Printf("[DEBUG] Entry timestamp: %v, tokens: %d\n", entry.Timestamp(), tokens)
 		totalTokens += tokens
 	}
 
-	// fmt.Printf("[DEBUG] Total tokens for date: %d\n", totalTokens)
 	return totalTokens, nil
 }
 

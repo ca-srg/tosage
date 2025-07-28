@@ -224,6 +224,123 @@ tosage -d
 
 **注意**: デーモンモードは`--bedrock`または`--vertex-ai`フラグを使用している場合はサポートされません。
 
+## コンテナの使用方法
+
+tosageは、GitHub Container Registry (ghcr.io)でマルチアーキテクチャコンテナイメージとして利用可能です。コンテナは`linux/amd64`と`linux/arm64`の両方のアーキテクチャをサポートしています。
+
+### イメージの取得
+
+```bash
+# 最新版
+docker pull ghcr.io/ca-srg/tosage:latest
+
+# 特定のバージョン
+docker pull ghcr.io/ca-srg/tosage:v1.0.0
+
+# 特定のアーキテクチャ用
+docker pull --platform linux/arm64 ghcr.io/ca-srg/tosage:latest
+```
+
+### コンテナの実行
+
+コンテナはデフォルトでCLIモードで実行されます：
+
+```bash
+# デフォルト設定で実行
+docker run --rm ghcr.io/ca-srg/tosage:latest
+
+# カスタム設定ファイルで実行
+docker run --rm \
+  -v ~/.config/tosage/config.json:/home/nonroot/.config/tosage/config.json:ro \
+  ghcr.io/ca-srg/tosage:latest
+
+# 環境変数で実行
+docker run --rm \
+  -e TOSAGE_PROMETHEUS_URL="https://prometheus.example.com/api/prom/push" \
+  -e TOSAGE_PROMETHEUS_USERNAME="user" \
+  -e TOSAGE_PROMETHEUS_PASSWORD="pass" \
+  ghcr.io/ca-srg/tosage:latest
+
+# Bedrockメトリクスをチェック
+docker run --rm \
+  -e AWS_REGION="us-east-1" \
+  ghcr.io/ca-srg/tosage:latest --bedrock
+
+# Vertex AIメトリクスをチェック
+docker run --rm \
+  -e GOOGLE_CLOUD_PROJECT="my-project" \
+  ghcr.io/ca-srg/tosage:latest --vertex-ai
+```
+
+### Docker Composeの例
+
+```yaml
+version: '3.8'
+
+services:
+  tosage:
+    image: ghcr.io/ca-srg/tosage:latest
+    restart: unless-stopped
+    volumes:
+      - ~/.config/tosage/config.json:/home/nonroot/.config/tosage/config.json:ro
+    environment:
+      - TOSAGE_PROMETHEUS_URL=${PROMETHEUS_URL}
+      - TOSAGE_PROMETHEUS_USERNAME=${PROMETHEUS_USERNAME}
+      - TOSAGE_PROMETHEUS_PASSWORD=${PROMETHEUS_PASSWORD}
+    command: ["--mode", "cli"]
+```
+
+### Kubernetesの例
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: tosage-metrics
+spec:
+  schedule: "0 */6 * * *"  # 6時間ごと
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: tosage
+            image: ghcr.io/ca-srg/tosage:latest
+            env:
+            - name: TOSAGE_PROMETHEUS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: tosage-config
+                  key: prometheus-url
+            - name: TOSAGE_PROMETHEUS_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: tosage-config
+                  key: prometheus-username
+            - name: TOSAGE_PROMETHEUS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: tosage-config
+                  key: prometheus-password
+          restartPolicy: OnFailure
+```
+
+### コンテナイメージの詳細
+
+- **ベースイメージ**: `gcr.io/distroless/static:nonroot` - セキュリティのための最小限のdistrolessイメージ
+- **ユーザー**: 非rootユーザーとして実行 (65532:65532)
+- **アーキテクチャ**: `linux/amd64`, `linux/arm64`
+- **エントリーポイント**: `/tosage`
+- **デフォルトコマンド**: `["--mode", "cli"]`
+
+### 利用可能なタグ
+
+- `latest` - 最新の安定版リリース
+- `vX.Y.Z` - 特定のバージョン（例：`v1.0.0`）
+- `vX.Y` - マイナーバージョン（例：`v1.0`）
+- `vX` - メジャーバージョン（例：`v1`）
+- `main-<short-sha>` - mainブランチからの開発ビルド
+
 ## ビルド
 
 ### 必要要件

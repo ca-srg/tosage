@@ -40,7 +40,8 @@ func TestConfigServiceImpl_GetConfig(t *testing.T) {
 
 	// ConfigService を作成
 	mockLogger := &MockLogger{}
-	service, err := NewConfigService(configRepo, mockLogger)
+	migrationService := NewConfigMigrationService(mockLogger)
+	service, err := NewConfigService(configRepo, migrationService, mockLogger)
 	if err != nil {
 		t.Fatalf("Failed to create config service: %v", err)
 	}
@@ -73,7 +74,8 @@ func TestConfigServiceImpl_UpdateConfig(t *testing.T) {
 
 	// ConfigService を作成
 	mockLogger := &MockLogger{}
-	service, err := NewConfigService(configRepo, mockLogger)
+	migrationService := NewConfigMigrationService(mockLogger)
+	service, err := NewConfigService(configRepo, migrationService, mockLogger)
 	if err != nil {
 		t.Fatalf("Failed to create config service: %v", err)
 	}
@@ -81,8 +83,8 @@ func TestConfigServiceImpl_UpdateConfig(t *testing.T) {
 	// 新しい設定を作成
 	newConfig := config.DefaultConfig()
 	newConfig.ClaudePath = "/new/path"
-	newConfig.Prometheus.Username = "testuser"
-	newConfig.Prometheus.Password = "testpass"
+	newConfig.Prometheus.RemoteWriteUsername = "testuser"
+	newConfig.Prometheus.RemoteWritePassword = "testpass"
 
 	// 設定を更新
 	err = service.UpdateConfig(newConfig)
@@ -125,7 +127,8 @@ func TestConfigServiceImpl_CreateDefaultConfig(t *testing.T) {
 
 	// ConfigService を作成
 	mockLogger := &MockLogger{}
-	service, err := NewConfigService(configRepo, mockLogger)
+	migrationService := NewConfigMigrationService(mockLogger)
+	service, err := NewConfigService(configRepo, migrationService, mockLogger)
 	if err != nil {
 		t.Fatalf("Failed to create config service: %v", err)
 	}
@@ -157,7 +160,8 @@ func TestConfigServiceImpl_CreateDefaultConfig(t *testing.T) {
 	repo2.SetConfigFile(filepath.Join(tempDir2, "config.json"))
 
 	mockLogger2 := &MockLogger{}
-	service2, err := NewConfigService(configRepo2, mockLogger2)
+	migrationService2 := NewConfigMigrationService(mockLogger2)
+	service2, err := NewConfigService(configRepo2, migrationService2, mockLogger2)
 	if err != nil {
 		t.Fatalf("Failed to create config service: %v", err)
 	}
@@ -196,15 +200,16 @@ func TestConfigServiceImpl_ExportConfig(t *testing.T) {
 
 	// ConfigService を作成
 	mockLogger := &MockLogger{}
-	service, err := NewConfigService(configRepo, mockLogger)
+	migrationService := NewConfigMigrationService(mockLogger)
+	service, err := NewConfigService(configRepo, migrationService, mockLogger)
 	if err != nil {
 		t.Fatalf("Failed to create config service: %v", err)
 	}
 
 	// パスワードを含む設定を作成
 	newConfig := config.DefaultConfig()
-	newConfig.Prometheus.Username = "testuser"
-	newConfig.Prometheus.Password = "secret-password"
+	newConfig.Prometheus.RemoteWriteUsername = "testuser"
+	newConfig.Prometheus.RemoteWritePassword = "secret-password"
 	newConfig.Logging.Promtail.Password = "promtail-secret"
 
 	// 設定を更新
@@ -218,8 +223,8 @@ func TestConfigServiceImpl_ExportConfig(t *testing.T) {
 
 	// パスワードがマスクされていることを確認
 	prometheusMap := exported["prometheus"].(map[string]interface{})
-	if prometheusMap["password"] != "****" {
-		t.Error("Prometheus password should be masked")
+	if prometheusMap["remote_write_password"] != "****" {
+		t.Error("Prometheus remote write password should be masked")
 	}
 
 	loggingMap := exported["logging"].(map[string]interface{})
@@ -253,7 +258,8 @@ func TestConfigServiceImpl_EnsureConfigExists(t *testing.T) {
 
 		// ConfigService を作成
 		mockLogger := &MockLogger{}
-		service, err := NewConfigService(configRepo, mockLogger)
+		migrationService := NewConfigMigrationService(mockLogger)
+		service, err := NewConfigService(configRepo, migrationService, mockLogger)
 		if err != nil {
 			t.Fatalf("Failed to create config service: %v", err)
 		}
@@ -303,15 +309,16 @@ func TestConfigServiceImpl_EnsureConfigExists(t *testing.T) {
 
 		// ConfigService を作成
 		mockLogger := &MockLogger{}
-		service, err := NewConfigService(configRepo, mockLogger)
+		migrationService := NewConfigMigrationService(mockLogger)
+		service, err := NewConfigService(configRepo, migrationService, mockLogger)
 		if err != nil {
 			t.Fatalf("Failed to create config service: %v", err)
 		}
 
 		// 既存の設定ファイルを作成
 		customConfig := config.DefaultConfig()
-		customConfig.Prometheus.Username = "testuser"
-		customConfig.Prometheus.Password = "testpass"
+		customConfig.Prometheus.RemoteWriteUsername = "testuser"
+		customConfig.Prometheus.RemoteWritePassword = "testpass"
 		err = configRepo.Save(customConfig)
 		if err != nil {
 			t.Fatalf("Failed to save initial config: %v", err)
@@ -325,7 +332,7 @@ func TestConfigServiceImpl_EnsureConfigExists(t *testing.T) {
 
 		// 設定ファイルが変更されていないことを確認
 		loadedConfig, _ := configRepo.Load()
-		if loadedConfig.Prometheus.Username != "testuser" {
+		if loadedConfig.Prometheus.RemoteWriteUsername != "testuser" {
 			t.Error("Existing config should not be modified")
 		}
 	})
@@ -348,7 +355,8 @@ func TestConfigServiceImpl_CreateTemplateConfig(t *testing.T) {
 
 	// ConfigService を作成
 	mockLogger := &MockLogger{}
-	service, err := NewConfigService(configRepo, mockLogger)
+	migrationService := NewConfigMigrationService(mockLogger)
+	service, err := NewConfigService(configRepo, migrationService, mockLogger)
 	if err != nil {
 		t.Fatalf("Failed to create config service: %v", err)
 	}
@@ -410,7 +418,8 @@ func TestConfigServiceImpl_LoadConfigWithFallback(t *testing.T) {
 
 		// ConfigService を作成
 		mockLogger := &MockLogger{}
-		service, err := NewConfigService(configRepo, mockLogger)
+		migrationService := NewConfigMigrationService(mockLogger)
+		service, err := NewConfigService(configRepo, migrationService, mockLogger)
 		if err != nil {
 			t.Fatalf("Failed to create config service: %v", err)
 		}
@@ -418,8 +427,8 @@ func TestConfigServiceImpl_LoadConfigWithFallback(t *testing.T) {
 		// 有効な設定ファイルを作成
 		validConfig := config.DefaultConfig()
 		validConfig.ClaudePath = "/custom/path"
-		validConfig.Prometheus.Username = "testuser"
-		validConfig.Prometheus.Password = "testpass"
+		validConfig.Prometheus.RemoteWriteUsername = "testuser"
+		validConfig.Prometheus.RemoteWritePassword = "testpass"
 		err = configRepo.Save(validConfig)
 		if err != nil {
 			t.Fatalf("Failed to save config: %v", err)
@@ -454,7 +463,8 @@ func TestConfigServiceImpl_LoadConfigWithFallback(t *testing.T) {
 
 		// ConfigService を作成
 		mockLogger := &MockLogger{}
-		service, err := NewConfigService(configRepo, mockLogger)
+		migrationService := NewConfigMigrationService(mockLogger)
+		service, err := NewConfigService(configRepo, migrationService, mockLogger)
 		if err != nil {
 			t.Fatalf("Failed to create config service: %v", err)
 		}
@@ -495,7 +505,8 @@ func TestConfigServiceImpl_LoadConfigWithFallback(t *testing.T) {
 
 		// ConfigService を作成（エラーを無視）
 		mockLogger := &MockLogger{}
-		service, _ := NewConfigService(configRepo, mockLogger)
+		migrationService := NewConfigMigrationService(mockLogger)
+		service, _ := NewConfigService(configRepo, migrationService, mockLogger)
 
 		// LoadConfigWithFallback を実行
 		cfg, err := service.LoadConfigWithFallback()

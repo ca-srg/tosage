@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
-	"time"
 
 	"github.com/ca-srg/tosage/domain/repository"
 	"github.com/ca-srg/tosage/infrastructure/config"
@@ -89,18 +88,6 @@ func (r *JSONConfigRepository) Save(cfg *config.AppConfig) error {
 		return fmt.Errorf("config validation failed: %w", err)
 	}
 
-	// 既存ファイルがある場合はバックアップを作成
-	exists, err := r.Exists()
-	if err != nil {
-		return err
-	}
-	if exists {
-		if err := r.Backup(); err != nil {
-			// バックアップ失敗はログに記録するが、保存は続行
-			fmt.Fprintf(os.Stderr, "Warning: failed to create backup: %v\n", err)
-		}
-	}
-
 	// JSONにマーシャル（インデント付き）
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
@@ -151,37 +138,6 @@ func (r *JSONConfigRepository) EnsureConfigDir() error {
 	return nil
 }
 
-// Backup は現在の設定ファイルのバックアップを作成する
-func (r *JSONConfigRepository) Backup() error {
-	exists, err := r.Exists()
-	if err != nil {
-		return err
-	}
-	if !exists {
-		return nil // バックアップするものがない
-	}
-
-	timestamp := time.Now().Format("20060102-150405")
-	backupFile := fmt.Sprintf("%s.backup.%s", r.configFile, timestamp)
-
-	data, err := os.ReadFile(r.configFile)
-	if err != nil {
-		return fmt.Errorf("failed to read config file for backup: %w", err)
-	}
-
-	if err := os.WriteFile(backupFile, data, 0600); err != nil {
-		return fmt.Errorf("failed to write backup file: %w", err)
-	}
-
-	// 古いバックアップファイルの削除（最新5個を保持）
-	if err := r.cleanupOldBackups(); err != nil {
-		// クリーンアップの失敗は警告として扱う
-		fmt.Fprintf(os.Stderr, "Warning: failed to cleanup old backups: %v\n", err)
-	}
-
-	return nil
-}
-
 // Validate は設定内容の妥当性を検証する
 func (r *JSONConfigRepository) Validate(cfg *config.AppConfig) error {
 	if cfg == nil {
@@ -189,29 +145,6 @@ func (r *JSONConfigRepository) Validate(cfg *config.AppConfig) error {
 	}
 	// AppConfig の既存の Validate メソッドを使用
 	return cfg.Validate()
-}
-
-// cleanupOldBackups は古いバックアップファイルを削除する
-func (r *JSONConfigRepository) cleanupOldBackups() error {
-	pattern := r.configFile + ".backup.*"
-	matches, err := filepath.Glob(pattern)
-	if err != nil {
-		return err
-	}
-
-	if len(matches) <= 5 {
-		return nil // 削除するものがない
-	}
-
-	// 古い順にソート（ファイル名でソート）
-	for i := 0; i < len(matches)-5; i++ {
-		if err := os.Remove(matches[i]); err != nil {
-			// 個別のファイル削除失敗は続行
-			fmt.Fprintf(os.Stderr, "Warning: failed to remove old backup %s: %v\n", matches[i], err)
-		}
-	}
-
-	return nil
 }
 
 // ensureSecurePermissions はファイルまたはディレクトリの権限を確保する
@@ -275,10 +208,15 @@ func (r *JSONConfigRepository) checkOwnership(path string) error {
 func (r *JSONConfigRepository) validateConfigIntegrity(cfg *config.AppConfig) error {
 	// パスワードフィールドが平文で保存されていないか確認
 	if cfg.Prometheus != nil {
-		// パスワードフィールドに特定のパターンがないか確認
+		// Remote Writeパスワードフィールドに特定のパターンがないか確認
+		if cfg.Prometheus.RemoteWritePassword != "" && len(cfg.Prometheus.RemoteWritePassword) < 8 {
+			// 短すぎるパスワードは警告
+			fmt.Fprintf(os.Stderr, "Warning: Prometheus remote write password appears to be weak\n")
+		}
+		// Queryパスワードフィールドに特定のパターンがないか確認
 		if cfg.Prometheus.Password != "" && len(cfg.Prometheus.Password) < 8 {
 			// 短すぎるパスワードは警告
-			fmt.Fprintf(os.Stderr, "Warning: Prometheus password appears to be weak\n")
+			fmt.Fprintf(os.Stderr, "Warning: Prometheus query password appears to be weak\n")
 		}
 	}
 

@@ -1,6 +1,7 @@
 package impl
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -15,6 +16,7 @@ import (
 type BedrockServiceImpl struct {
 	bedrockRepo repository.BedrockRepository
 	config      *repository.BedrockConfig
+	logger      domain.Logger
 
 	// Cache fields
 	cacheMutex   sync.RWMutex
@@ -27,10 +29,12 @@ type BedrockServiceImpl struct {
 func NewBedrockService(
 	bedrockRepo repository.BedrockRepository,
 	config *repository.BedrockConfig,
+	logger domain.Logger,
 ) usecase.BedrockService {
 	return &BedrockServiceImpl{
 		bedrockRepo:  bedrockRepo,
 		config:       config,
+		logger:       logger,
 		cachedUsage:  make(map[string]*entity.BedrockUsage),
 		cacheTimeout: 5 * time.Minute, // 5 minute cache
 	}
@@ -59,6 +63,9 @@ func (s *BedrockServiceImpl) GetCurrentUsage() (*entity.BedrockUsage, error) {
 		usage, err := s.GetUsageForRegion(region)
 		if err != nil {
 			// Log error but continue with other regions
+			s.logger.Error(context.TODO(), "Failed to get Bedrock usage for region",
+				domain.NewField("region", region),
+				domain.NewField("error", err.Error()))
 			continue
 		}
 
@@ -146,6 +153,10 @@ func (s *BedrockServiceImpl) GetDailyUsage(date time.Time) (*entity.BedrockUsage
 		usage, err := s.bedrockRepo.GetDailyUsage(region, date)
 		if err != nil {
 			// Log error but continue with other regions
+			s.logger.Error(context.TODO(), "Failed to get Bedrock daily usage",
+				domain.NewField("region", region),
+				domain.NewField("date", date.Format("2006-01-02")),
+				domain.NewField("error", err.Error()))
 			continue
 		}
 
@@ -197,6 +208,9 @@ func (s *BedrockServiceImpl) GetCurrentMonthUsage() (*entity.BedrockUsage, error
 		usage, err := s.bedrockRepo.GetCurrentMonthUsage(region)
 		if err != nil {
 			// Log error but continue with other regions
+			s.logger.Error(context.TODO(), "Failed to get Bedrock monthly usage",
+				domain.NewField("region", region),
+				domain.NewField("error", err.Error()))
 			continue
 		}
 

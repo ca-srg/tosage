@@ -37,10 +37,10 @@ func NewPrometheusMetricsRepository(cfg *config.PrometheusConfig) (repository.Me
 
 	// Create authentication config (always use basic auth if credentials are provided)
 	var authConfig *AuthConfig
-	if cfg.Username != "" && cfg.Password != "" {
+	if cfg.RemoteWriteUsername != "" && cfg.RemoteWritePassword != "" {
 		authConfig = &AuthConfig{
-			Username: cfg.Username,
-			Password: cfg.Password,
+			Username: cfg.RemoteWriteUsername,
+			Password: cfg.RemoteWritePassword,
 		}
 	}
 
