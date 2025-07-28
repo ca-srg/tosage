@@ -87,6 +87,8 @@ jobs:
       contents: read
       packages: write
       id-token: write
+    outputs:
+      image-tag: ${{ steps.extract-tag.outputs.tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -155,6 +157,21 @@ jobs:
           provenance: true
           sbom: true
 
+      - name: Extract SHA-based tag
+        id: extract-tag
+        run: |
+          # Extract the SHA-based tag from metadata output
+          TAGS="${{ steps.meta.outputs.tags }}"
+          # Look for tags with branch-sha format (e.g., main-5648a2e)
+          SHA_TAG=$(echo "$TAGS" | grep -E "\w+-[a-f0-9]{7}$" | head -n1)
+          if [ -z "$SHA_TAG" ]; then
+            echo "Error: Could not find SHA-based tag"
+            echo "Available tags: $TAGS"
+            exit 1
+          fi
+          echo "Found SHA tag: $SHA_TAG"
+          echo "tag=$SHA_TAG" >> $GITHUB_OUTPUT
+
       - name: Generate image report
         if: success()
         run: |
@@ -194,7 +211,7 @@ jobs:
       - name: Test container
         run: |
           # Pull and run the image
-          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          IMAGE="${{ needs.build-and-push.outputs.image-tag }}"
           
           echo "Testing image on platform: ${{ matrix.platform }}"
           docker run --rm --platform ${{ matrix.platform }} $IMAGE --help
