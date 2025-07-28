@@ -94,7 +94,7 @@ func TestDaemonController_StartStop(t *testing.T) {
 	statusService := impl.NewStatusService()
 	metricsService := &MockMetricsService{}
 	configService := &MockConfigService{}
-	systrayCtrl := NewSystrayController(ccService, statusService, metricsService, configService)
+	systrayCtrl := NewSystrayController(ccService, statusService, metricsService, configService, nil)
 
 	// Create daemon controller
 	daemon := NewDaemonController(cfg, configService, ccService, statusService, metricsService, systrayCtrl, &mockLogger{})
@@ -150,7 +150,7 @@ func TestDaemonController_MetricsSending(t *testing.T) {
 	statusService := impl.NewStatusService()
 	metricsService := &MockMetricsService{}
 	configService := &MockConfigService{}
-	systrayCtrl := NewSystrayController(ccService, statusService, metricsService, configService)
+	systrayCtrl := NewSystrayController(ccService, statusService, metricsService, configService, nil)
 
 	// Create daemon controller
 	daemon := NewDaemonController(cfg, configService, ccService, statusService, metricsService, systrayCtrl, &mockLogger{})
@@ -199,7 +199,7 @@ func TestDaemonController_ManualMetricsSend(t *testing.T) {
 	statusService := impl.NewStatusService()
 	metricsService := &MockMetricsService{}
 	configService := &MockConfigService{}
-	systrayCtrl := NewSystrayController(ccService, statusService, metricsService, configService)
+	systrayCtrl := NewSystrayController(ccService, statusService, metricsService, configService, nil)
 
 	// Create daemon controller
 	daemon := NewDaemonController(cfg, configService, ccService, statusService, metricsService, systrayCtrl, &mockLogger{})
@@ -257,7 +257,7 @@ func TestDaemonController_SystemEvents(t *testing.T) {
 	statusService := impl.NewStatusService()
 	metricsService := &MockMetricsService{}
 	configService := &MockConfigService{}
-	systrayCtrl := NewSystrayController(ccService, statusService, metricsService, configService)
+	systrayCtrl := NewSystrayController(ccService, statusService, metricsService, configService, nil)
 
 	// Create daemon controller
 	daemon := NewDaemonController(cfg, configService, ccService, statusService, metricsService, systrayCtrl, &mockLogger{})

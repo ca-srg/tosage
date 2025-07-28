@@ -38,6 +38,24 @@ type CursorConfig struct {
 	CacheTimeout int `json:"cache_timeout,omitempty" env:"TOSAGE_CURSOR_CACHE_TIMEOUT,default=300"`
 }
 
+// BedrockConfig holds AWS Bedrock integration configuration
+type BedrockConfig struct {
+	// Enabled indicates if Bedrock tracking is enabled
+	Enabled bool `json:"enabled,omitempty" env:"TOSAGE_BEDROCK_ENABLED,default=false"`
+
+	// Regions is the list of AWS regions to monitor
+	Regions []string `json:"regions,omitempty" env:"TOSAGE_BEDROCK_REGIONS"`
+
+	// AWSProfile is the AWS profile to use (optional)
+	AWSProfile string `json:"aws_profile,omitempty" env:"TOSAGE_BEDROCK_AWS_PROFILE,default="`
+
+	// AssumeRoleARN is the ARN of the role to assume (optional)
+	AssumeRoleARN string `json:"assume_role_arn,omitempty" env:"TOSAGE_BEDROCK_ASSUME_ROLE_ARN,default="`
+
+	// CollectionIntervalSec is how often to collect metrics in seconds
+	CollectionIntervalSec int `json:"collection_interval_seconds,omitempty" env:"TOSAGE_BEDROCK_COLLECTION_INTERVAL_SECONDS,default=900"`
+}
+
 // DaemonConfig holds daemon mode configuration
 type DaemonConfig struct {
 	// Enabled indicates whether daemon mode is enabled
@@ -109,6 +127,9 @@ type AppConfig struct {
 	// Cursor holds Cursor integration configuration
 	Cursor *CursorConfig `json:"cursor,omitempty"`
 
+	// Bedrock holds AWS Bedrock integration configuration
+	Bedrock *BedrockConfig `json:"bedrock,omitempty"`
+
 	// Daemon holds daemon mode configuration
 	Daemon *DaemonConfig `json:"daemon,omitempty"`
 
@@ -133,6 +154,13 @@ func DefaultConfig() *AppConfig {
 			DatabasePath: "",
 			APITimeout:   30,  // 30 seconds
 			CacheTimeout: 300, // 5 minutes
+		},
+		Bedrock: &BedrockConfig{
+			Enabled:               false, // Disabled by default for security
+			Regions:               []string{"us-east-1", "us-west-2"},
+			AWSProfile:            "",
+			AssumeRoleARN:         "",
+			CollectionIntervalSec: 900, // 15 minutes
 		},
 		Daemon: &DaemonConfig{
 			Enabled:      false,

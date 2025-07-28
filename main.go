@@ -15,9 +15,10 @@ import (
 func main() {
 	// Parse command line flags
 	var (
-		cliMode    = flag.Bool("cli", false, "Run in CLI mode (default is daemon mode on macOS)")
-		daemonMode = flag.Bool("daemon", false, "Run in daemon mode (macOS only)")
-		debugMode  = flag.Bool("debug", false, "Enable debug logging to stdout")
+		cliMode        = flag.Bool("cli", false, "Run in CLI mode (default is daemon mode on macOS)")
+		daemonMode     = flag.Bool("daemon", false, "Run in daemon mode (macOS only)")
+		debugMode      = flag.Bool("debug", false, "Enable debug logging to stdout")
+		includeBedrock = flag.Bool("bedrock", false, "Include AWS Bedrock usage metrics (requires AWS credentials)")
 	)
 	flag.Parse()
 
@@ -25,6 +26,9 @@ func main() {
 	opts := []di.ContainerOption{}
 	if *debugMode {
 		opts = append(opts, di.WithDebugMode(true))
+	}
+	if *includeBedrock {
+		opts = append(opts, di.WithBedrockEnabled(true))
 	}
 
 	container, err := di.NewContainer(opts...)

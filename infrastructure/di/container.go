@@ -29,6 +29,7 @@ type Container struct {
 	metricsRepo     repository.MetricsRepository
 	cursorTokenRepo repository.CursorTokenRepository
 	cursorAPIRepo   repository.CursorAPIRepository
+	bedrockRepo     repository.BedrockRepository
 
 	// Services
 	timezoneService repository.TimezoneService
@@ -37,6 +38,7 @@ type Container struct {
 	ccService      usecase.CcService
 	metricsService usecase.MetricsService
 	cursorService  usecase.CursorService
+	bedrockService usecase.BedrockService
 	statusService  usecase.StatusService
 	restartManager usecase.RestartManager
 
@@ -54,7 +56,8 @@ type Container struct {
 	logger        domain.Logger
 
 	// Options
-	debugMode bool
+	debugMode      bool
+	bedrockEnabled bool
 }
 
 // ContainerOption is a function that configures the container
@@ -64,6 +67,13 @@ type ContainerOption func(*Container)
 func WithDebugMode(debug bool) ContainerOption {
 	return func(c *Container) {
 		c.debugMode = debug
+	}
+}
+
+// WithBedrockEnabled sets the Bedrock enabled mode
+func WithBedrockEnabled(enabled bool) ContainerOption {
+	return func(c *Container) {
+		c.bedrockEnabled = enabled
 	}
 }
 
@@ -180,6 +190,21 @@ func (c *Container) initConfig() error {
 		}
 	}
 
+	// Override Bedrock enabled state if set via command line
+	if c.bedrockEnabled {
+		if cfg.Bedrock == nil {
+			cfg.Bedrock = &config.BedrockConfig{
+				Enabled:               true,
+				Regions:               []string{"us-east-1", "us-west-2"},
+				AWSProfile:            "",
+				AssumeRoleARN:         "",
+				CollectionIntervalSec: 900,
+			}
+		} else {
+			cfg.Bedrock.Enabled = true
+		}
+	}
+
 	c.config = cfg
 	return nil
 }
@@ -229,6 +254,17 @@ func (c *Container) initRepositories() error {
 		c.cursorAPIRepo = infraRepo.NewCursorAPIRepository(time.Duration(c.config.Cursor.APITimeout) * time.Second)
 	}
 
+	// Initialize Bedrock repository if enabled
+	if c.config.Bedrock != nil && c.config.Bedrock.Enabled {
+		bedrockRepo, err := infraRepo.NewBedrockCloudWatchRepository(c.config.Bedrock.AWSProfile)
+		if err != nil {
+			// Log warning but don't fail initialization
+			c.logger.Warn(nil, "Failed to initialize Bedrock repository", domain.NewField("error", err.Error()))
+		} else {
+			c.bedrockRepo = bedrockRepo
+		}
+	}
+
 	return nil
 }
 
@@ -249,6 +285,18 @@ func (c *Container) initUseCases() error {
 	// Initialize Cursor service if configured
 	if c.config.Cursor != nil && c.cursorTokenRepo != nil && c.cursorAPIRepo != nil {
 		c.cursorService = impl.NewCursorService(c.cursorTokenRepo, c.cursorAPIRepo, c.config.Cursor)
+	}
+
+	// Initialize Bedrock service if configured
+	if c.config.Bedrock != nil && c.bedrockRepo != nil {
+		bedrockConfig := &repository.BedrockConfig{
+			Enabled:            c.config.Bedrock.Enabled,
+			Regions:            c.config.Bedrock.Regions,
+			AWSProfile:         c.config.Bedrock.AWSProfile,
+			AssumeRoleARN:      c.config.Bedrock.AssumeRoleARN,
+			CollectionInterval: time.Duration(c.config.Bedrock.CollectionIntervalSec) * time.Second,
+		}
+		c.bedrockService = impl.NewBedrockService(c.bedrockRepo, bedrockConfig)
 	}
 
 	// Initialize Restart manager
@@ -301,6 +349,7 @@ func (c *Container) initPrometheus() error {
 	c.metricsService = impl.NewMetricsServiceImpl(
 		c.ccService,
 		c.cursorService,
+		c.bedrockService,
 		c.metricsRepo,
 		c.config.Prometheus,
 		c.CreateLogger("metrics"),
@@ -323,6 +372,7 @@ func (c *Container) initDaemon() error {
 		c.statusService,
 		c.metricsService,
 		c.configService,
+		c.bedrockService,
 	)
 
 	// Initialize daemon controller
@@ -392,6 +442,16 @@ func (c *Container) GetCursorAPIRepository() repository.CursorAPIRepository {
 // GetCursorService returns the Cursor service
 func (c *Container) GetCursorService() usecase.CursorService {
 	return c.cursorService
+}
+
+// GetBedrockService returns the Bedrock service
+func (c *Container) GetBedrockService() usecase.BedrockService {
+	return c.bedrockService
+}
+
+// GetBedrockRepository returns the Bedrock repository
+func (c *Container) GetBedrockRepository() repository.BedrockRepository {
+	return c.bedrockRepo
 }
 
 // GetStatusService returns the status service
@@ -585,6 +645,7 @@ func (b *ContainerBuilder) Build() (*Container, error) {
 	container.metricsService = impl.NewMetricsServiceImpl(
 		container.ccService,
 		container.cursorService,
+		container.bedrockService,
 		container.metricsRepo,
 		container.config.Prometheus,
 		container.CreateLogger("metrics"),
