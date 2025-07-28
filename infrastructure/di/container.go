@@ -551,7 +551,7 @@ func (c *Container) GetTimezoneService() repository.TimezoneService {
 
 // InitDaemonComponents initializes daemon components on demand
 func (c *Container) InitDaemonComponents() error {
-	return c.initDaemon()
+	return c.initDaemonPlatform()
 }
 
 // Builder pattern for custom container configuration

@@ -40,9 +40,6 @@ var (
 		"kimura", "hayashi", "shimizu", "yamazaki", "mori", "abe",
 	}
 	hostPatterns = []string{"%s-macbook", "%s-mac", "%s-%s", "%ss-mac"}
-	
-	// ローカルランダムジェネレータ
-	rng *rand.Rand
 )
 
 // Config はデモの設定を保持

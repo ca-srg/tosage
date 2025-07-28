@@ -326,6 +326,7 @@ func (s *SystrayController) handleVertexAIToggle() {
 
 	// Signal configuration change
 	s.vertexAIChan <- struct{}{}
+}
 
 // handleHideFromDockToggle handles toggling the hide from dock setting
 func (s *SystrayController) handleHideFromDockToggle() {
