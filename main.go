@@ -191,7 +191,22 @@ func runDaemonMode(container *di.Container) {
 
 	// Run the daemon controller on the main thread
 	// This is required for macOS GUI components
-	daemonController.Run()
+
+	// Call Run() using a helper function to avoid platform-specific type issues
+	runDaemonController(daemonController, logger, ctx)
+}
+
+// runDaemonController is a helper function to run the daemon controller
+// It handles platform-specific type differences
+func runDaemonController(daemonController interface{}, logger domain.Logger, ctx context.Context) {
+	// Use reflection to call Run() method regardless of the concrete type
+	// This works for both *controller.DaemonController (Darwin) and interface{} (non-Darwin)
+	if runner, ok := daemonController.(interface{ Run() }); ok {
+		runner.Run()
+	} else {
+		logger.Error(ctx, "Daemon controller does not implement Run method or daemon mode is not supported on this platform")
+		os.Exit(1)
+	}
 }
 
 // runCSVExportMode runs the application in CSV export mode
