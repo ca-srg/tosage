@@ -25,10 +25,12 @@ type Container struct {
 	configService usecase.ConfigService
 
 	// Repositories
-	ccRepo          repository.CcRepository
-	metricsRepo     repository.MetricsRepository
-	cursorTokenRepo repository.CursorTokenRepository
-	cursorAPIRepo   repository.CursorAPIRepository
+	ccRepo              repository.CcRepository
+	metricsRepo         repository.MetricsRepository
+	cursorTokenRepo     repository.CursorTokenRepository
+	cursorAPIRepo       repository.CursorAPIRepository
+	prometheusQueryRepo repository.PrometheusQueryRepository
+	csvExportRepo       repository.CSVExportRepository
 
 	// Services
 	timezoneService repository.TimezoneService
@@ -39,6 +41,7 @@ type Container struct {
 	cursorService  usecase.CursorService
 	statusService  usecase.StatusService
 	restartManager usecase.RestartManager
+	exportService  usecase.ExportService
 
 	// Presenters
 	consolePresenter presenter.ConsolePresenter
@@ -48,6 +51,7 @@ type Container struct {
 	cliController     *controller.CLIController
 	systrayController *controller.SystrayController
 	daemonController  *controller.DaemonController
+	exportController  *controller.ExportController
 
 	// Logging
 	loggerFactory domain.LoggerFactory
@@ -275,6 +279,15 @@ func (c *Container) initControllers() error {
 		c.consolePresenter,
 		c.jsonPresenter,
 	)
+
+	// Initialize export controller if export service is available
+	if c.exportService != nil {
+		c.exportController = controller.NewExportController(
+			c.exportService,
+			c.CreateLogger("export-controller"),
+		)
+	}
+
 	return nil
 }
 
@@ -296,6 +309,27 @@ func (c *Container) initPrometheus() error {
 		return fmt.Errorf("failed to create metrics repository: %w", err)
 	}
 	c.metricsRepo = metricsRepo
+
+	// Initialize Prometheus query repository
+	prometheusQueryRepo, err := infraRepo.NewPrometheusQueryRepository(c.config.Prometheus)
+	if err != nil {
+		return fmt.Errorf("failed to create prometheus query repository: %w", err)
+	}
+	c.prometheusQueryRepo = prometheusQueryRepo
+
+	// Initialize CSV export repository
+	c.csvExportRepo = infraRepo.NewCSVExportRepository()
+
+	// Initialize export service
+	exportService, err := impl.NewExportService(
+		c.prometheusQueryRepo,
+		c.csvExportRepo,
+		c.CreateLogger("export"),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create export service: %w", err)
+	}
+	c.exportService = exportService
 
 	// Initialize metrics service
 	c.metricsService = impl.NewMetricsServiceImpl(
@@ -367,6 +401,11 @@ func (c *Container) GetJSONPresenter() presenter.JSONPresenter {
 // GetCLIController returns the CLI controller
 func (c *Container) GetCLIController() *controller.CLIController {
 	return c.cliController
+}
+
+// GetExportController returns the export controller
+func (c *Container) GetExportController() *controller.ExportController {
+	return c.exportController
 }
 
 // GetMetricsRepository returns the metrics repository

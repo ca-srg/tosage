@@ -14,6 +14,12 @@ import (
 )
 
 func main() {
+	// Check for subcommands first
+	if len(os.Args) > 1 && os.Args[1] == "export-prometheus" {
+		runExportCommand(os.Args[2:])
+		return
+	}
+
 	// Parse command line flags
 	var (
 		cliMode    = flag.Bool("cli", false, "Run in CLI mode (default is daemon mode on macOS)")
@@ -131,4 +137,27 @@ func runDaemonMode(container *di.Container) {
 	// Run the daemon controller on the main thread
 	// This is required for macOS GUI components
 	daemonController.Run()
+}
+
+// runExportCommand runs the export-prometheus subcommand
+func runExportCommand(args []string) {
+	// Create DI container
+	container, err := di.NewContainer()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize application: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Get export controller
+	exportController := container.GetExportController()
+	if exportController == nil {
+		fmt.Fprintf(os.Stderr, "Export functionality is not available. Please check your Prometheus configuration.\n")
+		os.Exit(1)
+	}
+
+	// Run export command
+	if err := exportController.Run(args); err != nil {
+		fmt.Fprintf(os.Stderr, "Export failed: %v\n", err)
+		os.Exit(1)
+	}
 }
