@@ -15,6 +15,7 @@ A Go application that tracks token usage from Claude Code, Cursor, AWS Bedrock, 
 - **Dual Mode Operation**: CLI mode for quick checks, daemon mode for continuous monitoring
 - **macOS System Tray**: Native system tray support for daemon mode (Claude Code/Cursor only)
 - **Automatic Data Discovery**: Finds Claude Code data across multiple locations
+- **CSV Export**: Export historical metrics data to CSV format for analysis and reporting
 - **API Integrations**: 
   - Cursor API for premium request usage and pricing
   - AWS CloudWatch for Bedrock metrics
@@ -216,6 +217,68 @@ tosage --vertex-ai
 
 **Note**: When using `--bedrock` or `--vertex-ai` flags, Claude Code and Cursor metrics are skipped.
 
+### CSV Export Mode
+
+Export metrics data to CSV file for analysis:
+
+```bash
+# Export all metrics for the last 30 days
+tosage --export-csv
+
+# Export to specific file
+tosage --export-csv --output metrics_report.csv
+
+# Export specific date range
+tosage --export-csv --start-time "2025-01-01T00:00:00Z" --end-time "2025-01-31T23:59:59Z"
+
+# Export only specific metric types
+tosage --export-csv --metrics-types "claude_code,cursor"
+
+# Combine options
+tosage --export-csv \
+  --output quarterly_report.csv \
+  --start-time "2025-01-01T00:00:00Z" \
+  --end-time "2025-03-31T23:59:59Z" \
+  --metrics-types "claude_code,cursor,bedrock,vertex_ai"
+```
+
+#### CSV Export Options
+
+- `--export-csv`: Enable CSV export mode
+- `--output`: Output file path (default: `metrics_YYYYMMDD_HHMMSS.csv`)
+- `--start-time`: Start time in ISO 8601 format (default: 30 days ago)
+- `--end-time`: End time in ISO 8601 format (default: now)
+- `--metrics-types`: Comma-separated list of metric types to export
+  - Available types: `claude_code`, `cursor`, `bedrock`, `vertex_ai`
+  - Default: all available types
+
+#### CSV Format
+
+The exported CSV includes the following columns:
+- `timestamp`: ISO 8601 formatted timestamp
+- `source`: Metric source (claude_code, cursor, bedrock, vertex_ai)
+- `project`: Project or workspace identifier
+- `value`: Numeric value (tokens, requests)
+- `unit`: Unit of measurement (tokens, requests)
+- Additional metadata columns specific to each source
+
+Example CSV output:
+```csv
+timestamp,source,project,value,unit,input_tokens,output_tokens,cost,currency
+2025-01-15T00:00:00Z,claude_code,all_projects,150000.00,tokens,120000,30000,1.2500,USD
+2025-01-15T00:00:00Z,cursor,all_workspaces,25.00,requests,,,2.5000,USD
+2025-01-15T00:00:00Z,bedrock,all_models,50000.00,tokens,40000,10000,0.7500,USD
+```
+
+#### Security Features
+
+The CSV export includes several security measures:
+- Path traversal prevention
+- System directory write protection
+- CSV injection prevention
+- Secure file permissions (600)
+- UTF-8 BOM for proper encoding
+
 ### Daemon Mode
 
 Runs as a system tray application with periodic metrics sending (Claude Code/Cursor only):
@@ -225,6 +288,123 @@ tosage -d
 ```
 
 **Note**: Daemon mode is not supported when using `--bedrock` or `--vertex-ai` flags.
+
+## Container Usage
+
+tosage is available as a multi-architecture container image on GitHub Container Registry (ghcr.io). The container supports both `linux/amd64` and `linux/arm64` architectures.
+
+### Pull the Image
+
+```bash
+# Latest version
+docker pull ghcr.io/ca-srg/tosage:latest
+
+# Specific version
+docker pull ghcr.io/ca-srg/tosage:v1.0.0
+
+# For a specific architecture
+docker pull --platform linux/arm64 ghcr.io/ca-srg/tosage:latest
+```
+
+### Running the Container
+
+The container runs in CLI mode by default:
+
+```bash
+# Run with default configuration
+docker run --rm ghcr.io/ca-srg/tosage:latest
+
+# Run with custom configuration file
+docker run --rm \
+  -v ~/.config/tosage/config.json:/home/nonroot/.config/tosage/config.json:ro \
+  ghcr.io/ca-srg/tosage:latest
+
+# Run with environment variables
+docker run --rm \
+  -e TOSAGE_PROMETHEUS_URL="https://prometheus.example.com/api/prom/push" \
+  -e TOSAGE_PROMETHEUS_USERNAME="user" \
+  -e TOSAGE_PROMETHEUS_PASSWORD="pass" \
+  ghcr.io/ca-srg/tosage:latest
+
+# Check Bedrock metrics
+docker run --rm \
+  -e AWS_REGION="us-east-1" \
+  ghcr.io/ca-srg/tosage:latest --bedrock
+
+# Check Vertex AI metrics
+docker run --rm \
+  -e GOOGLE_CLOUD_PROJECT="my-project" \
+  ghcr.io/ca-srg/tosage:latest --vertex-ai
+```
+
+### Docker Compose Example
+
+```yaml
+version: '3.8'
+
+services:
+  tosage:
+    image: ghcr.io/ca-srg/tosage:latest
+    restart: unless-stopped
+    volumes:
+      - ~/.config/tosage/config.json:/home/nonroot/.config/tosage/config.json:ro
+    environment:
+      - TOSAGE_PROMETHEUS_URL=${PROMETHEUS_URL}
+      - TOSAGE_PROMETHEUS_USERNAME=${PROMETHEUS_USERNAME}
+      - TOSAGE_PROMETHEUS_PASSWORD=${PROMETHEUS_PASSWORD}
+    command: ["--mode", "cli"]
+```
+
+### Kubernetes Example
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: tosage-metrics
+spec:
+  schedule: "0 */6 * * *"  # Every 6 hours
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: tosage
+            image: ghcr.io/ca-srg/tosage:latest
+            env:
+            - name: TOSAGE_PROMETHEUS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: tosage-config
+                  key: prometheus-url
+            - name: TOSAGE_PROMETHEUS_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: tosage-config
+                  key: prometheus-username
+            - name: TOSAGE_PROMETHEUS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: tosage-config
+                  key: prometheus-password
+          restartPolicy: OnFailure
+```
+
+### Container Image Details
+
+- **Base Image**: `gcr.io/distroless/static:nonroot` - Minimal distroless image for security
+- **User**: Runs as non-root user (65532:65532)
+- **Architectures**: `linux/amd64`, `linux/arm64`
+- **Entry Point**: `/tosage`
+- **Default Command**: `["--mode", "cli"]`
+
+### Available Tags
+
+- `latest` - Latest stable release
+- `vX.Y.Z` - Specific version (e.g., `v1.0.0`)
+- `vX.Y` - Minor version (e.g., `v1.0`)
+- `vX` - Major version (e.g., `v1`)
+- `main-<short-sha>` - Development builds from main branch
 
 ## Building
 

@@ -50,3 +50,4 @@ dist
 *.dmg.zip
 actions.dmg
 local.dmg
+*.csv

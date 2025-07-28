@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/ca-srg/tosage/domain"
 	infraConfig "github.com/ca-srg/tosage/infrastructure/config"
 	"github.com/ca-srg/tosage/infrastructure/di"
 	"github.com/ca-srg/tosage/interface/cli"
+	"github.com/ca-srg/tosage/usecase/impl"
 )
 
 func main() {
@@ -22,6 +24,13 @@ func main() {
 		debugMode       = flag.Bool("debug", false, "Enable debug logging to stdout")
 		includeBedrock  = flag.Bool("bedrock", false, "Include AWS Bedrock usage metrics (requires AWS credentials)")
 		includeVertexAI = flag.Bool("vertex-ai", false, "Include Google Vertex AI usage metrics (requires Google Cloud credentials)")
+
+		// CSV export flags
+		exportCSV   = flag.Bool("export-csv", false, "Export metrics to CSV file")
+		output      = flag.String("output", "", "Output CSV file path (default: metrics_YYYYMMDD_HHMMSS.csv)")
+		startTime   = flag.String("start-time", "", "Start time in ISO 8601 format (default: 30 days ago)")
+		endTime     = flag.String("end-time", "", "End time in ISO 8601 format (default: now)")
+		metricTypes = flag.String("metrics-types", "", "Comma-separated list of metric types to export (claude_code,cursor,bedrock,vertex_ai,all)")
 	)
 	flag.Parse()
 
@@ -45,6 +54,12 @@ func main() {
 
 	// Get configuration
 	config := container.GetConfig()
+
+	// Check if CSV export mode is requested
+	if *exportCSV {
+		runCSVExportMode(container, *output, *startTime, *endTime, *metricTypes)
+		return
+	}
 
 	// Determine mode based on flags and configuration
 	runDaemon := false
@@ -116,8 +131,27 @@ func runCLIMode(container *di.Container) {
 
 	// Skip Claude Code and Cursor metrics if Bedrock or Vertex AI is enabled
 	config := container.GetConfig()
-	if (config.Bedrock != nil && config.Bedrock.Enabled) || (config.VertexAI != nil && config.VertexAI.Enabled) {
+	bedrockEnabled := config.Bedrock != nil && config.Bedrock.Enabled
+	vertexAIEnabled := config.VertexAI != nil && config.VertexAI.Enabled
+
+	if bedrockEnabled || vertexAIEnabled {
 		cliController.SetSkipCCMetrics(true)
+
+		// Check if services were properly initialized and set them to CLI controller
+		bedrockService := container.GetBedrockService()
+		vertexAIService := container.GetVertexAIService()
+
+		// Set services to CLI controller
+		cliController.SetBedrockService(bedrockService)
+		cliController.SetVertexAIService(vertexAIService)
+
+		// Provide feedback if services failed to initialize
+		if bedrockEnabled && bedrockService == nil {
+			fmt.Fprintf(os.Stderr, "Warning: Bedrock was enabled but service initialization failed\n")
+		}
+		if vertexAIEnabled && vertexAIService == nil {
+			fmt.Fprintf(os.Stderr, "Warning: Vertex AI was enabled but service initialization failed\n")
+		}
 	}
 
 	metricsService := container.GetMetricsService()
@@ -158,4 +192,63 @@ func runDaemonMode(container *di.Container) {
 	// Run the daemon controller on the main thread
 	// This is required for macOS GUI components
 	daemonController.Run()
+}
+
+// runCSVExportMode runs the application in CSV export mode
+func runCSVExportMode(container *di.Container, outputPath, startTimeStr, endTimeStr, metricTypesStr string) {
+	// Get logger
+	logger := container.CreateLogger("main")
+	ctx := context.Background()
+
+	// Validate that --metrics-types is specified
+	if metricTypesStr == "" {
+		fmt.Fprintf(os.Stderr, "Error: --metrics-types is required when using --export-csv\n")
+		fmt.Fprintf(os.Stderr, "Available metric types: claude_code, cursor, bedrock, vertex_ai, all\n")
+		fmt.Fprintf(os.Stderr, "Example: tosage --export-csv --metrics-types \"claude_code,cursor\"\n")
+		os.Exit(1)
+	}
+
+	// Parse metric types
+	var metricTypes []string
+	if metricTypesStr != "" {
+		metricTypes = strings.Split(metricTypesStr, ",")
+		// Trim spaces
+		for i := range metricTypes {
+			metricTypes[i] = strings.TrimSpace(metricTypes[i])
+		}
+	}
+
+	// Generate export options
+	options, err := impl.GenerateExportOptions(outputPath, startTimeStr, endTimeStr, metricTypes)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Invalid export options: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Get CSV export service
+	csvExportService := container.GetCSVExportService()
+	if csvExportService == nil {
+		fmt.Fprintf(os.Stderr, "CSV export service not available\n")
+		os.Exit(1)
+	}
+
+	// Perform export
+	logger.Info(ctx, "Starting CSV export",
+		domain.NewField("output", outputPath),
+		domain.NewField("startTime", startTimeStr),
+		domain.NewField("endTime", endTimeStr),
+		domain.NewField("metricTypes", metricTypes))
+
+	if err := csvExportService.Export(*options); err != nil {
+		fmt.Fprintf(os.Stderr, "Export failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Display the output path that was actually used
+	actualOutputPath := outputPath
+	if actualOutputPath == "" {
+		actualOutputPath = options.OutputPath
+	}
+
+	fmt.Printf("Successfully exported metrics to: %s\n", actualOutputPath)
 }

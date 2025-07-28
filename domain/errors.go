@@ -37,6 +37,15 @@ const (
 
 	// ErrCodeTimezone indicates a timezone-related error
 	ErrCodeTimezone ErrorCode = "TIMEZONE_ERROR"
+
+	// ErrCodeCSVExport indicates a CSV export-related error
+	ErrCodeCSVExport ErrorCode = "CSV_EXPORT_ERROR"
+
+	// ErrCodeFileOperation indicates a file operation error
+	ErrCodeFileOperation ErrorCode = "FILE_OPERATION_ERROR"
+
+	// ErrCodeDataCollection indicates a data collection error
+	ErrCodeDataCollection ErrorCode = "DATA_COLLECTION_ERROR"
 )
 
 // DomainError represents a domain-specific error
@@ -217,4 +226,81 @@ func ErrTimezoneDetection(fallbackLocation string) *DomainError {
 func ErrTimezoneParse(timezoneName string, err error) *DomainError {
 	return NewDomainErrorWithCause(ErrCodeTimezone, fmt.Sprintf("failed to parse timezone: %s", timezoneName), err).
 		WithDetails("timezoneName", timezoneName)
+}
+
+// CSV Export errors
+
+// ErrCSVExport creates a CSV export error
+func ErrCSVExport(operation string, reason string) *DomainError {
+	return NewDomainError(ErrCodeCSVExport, fmt.Sprintf("CSV export error in %s: %s", operation, reason)).
+		WithDetails("operation", operation).
+		WithDetails("reason", reason)
+}
+
+// ErrCSVExportWithCause creates a CSV export error with cause
+func ErrCSVExportWithCause(operation string, reason string, err error) *DomainError {
+	return NewDomainErrorWithCause(ErrCodeCSVExport, fmt.Sprintf("CSV export error in %s: %s", operation, reason), err).
+		WithDetails("operation", operation).
+		WithDetails("reason", reason)
+}
+
+// File operation errors
+
+// ErrFileOperation creates a file operation error
+func ErrFileOperation(operation string, path string, reason string) *DomainError {
+	return NewDomainError(ErrCodeFileOperation, fmt.Sprintf("file operation error in %s: %s", operation, reason)).
+		WithDetails("operation", operation).
+		WithDetails("path", path).
+		WithDetails("reason", reason)
+}
+
+// ErrFileOperationWithCause creates a file operation error with cause
+func ErrFileOperationWithCause(operation string, path string, err error) *DomainError {
+	return NewDomainErrorWithCause(ErrCodeFileOperation, fmt.Sprintf("file operation error in %s", operation), err).
+		WithDetails("operation", operation).
+		WithDetails("path", path)
+}
+
+// ErrFilePermission creates a file permission error
+func ErrFilePermission(path string, requiredPermission string) *DomainError {
+	return NewDomainError(ErrCodeFileOperation, fmt.Sprintf("insufficient permissions for file: %s", path)).
+		WithDetails("path", path).
+		WithDetails("requiredPermission", requiredPermission)
+}
+
+// ErrPathTraversal creates a path traversal error
+func ErrPathTraversal(path string) *DomainError {
+	return NewDomainError(ErrCodeFileOperation, "path contains directory traversal").
+		WithDetails("path", path).
+		WithDetails("securityViolation", "directory_traversal")
+}
+
+// ErrSystemDirectory creates a system directory access error
+func ErrSystemDirectory(path string) *DomainError {
+	return NewDomainError(ErrCodeFileOperation, "cannot write to system directory").
+		WithDetails("path", path).
+		WithDetails("securityViolation", "system_directory_access")
+}
+
+// Data collection errors
+
+// ErrDataCollection creates a data collection error
+func ErrDataCollection(source string, reason string) *DomainError {
+	return NewDomainError(ErrCodeDataCollection, fmt.Sprintf("data collection error from %s: %s", source, reason)).
+		WithDetails("source", source).
+		WithDetails("reason", reason)
+}
+
+// ErrDataCollectionWithCause creates a data collection error with cause
+func ErrDataCollectionWithCause(source string, reason string, err error) *DomainError {
+	return NewDomainErrorWithCause(ErrCodeDataCollection, fmt.Sprintf("data collection error from %s: %s", source, reason), err).
+		WithDetails("source", source).
+		WithDetails("reason", reason)
+}
+
+// ErrNoDataAvailable creates a no data available error
+func ErrNoDataAvailable(source string, timeRange string) *DomainError {
+	return NewDomainError(ErrCodeDataCollection, fmt.Sprintf("no data available from %s for %s", source, timeRange)).
+		WithDetails("source", source).
+		WithDetails("timeRange", timeRange)
 }

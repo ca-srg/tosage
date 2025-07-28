@@ -31,18 +31,21 @@ type Container struct {
 	cursorAPIRepo   repository.CursorAPIRepository
 	bedrockRepo     repository.BedrockRepository
 	vertexAIRepo    repository.VertexAIRepository
+	csvWriterRepo   repository.CSVWriterRepository
 
 	// Services
 	timezoneService repository.TimezoneService
 
 	// Use Cases
-	ccService       usecase.CcService
-	metricsService  usecase.MetricsService
-	cursorService   usecase.CursorService
-	bedrockService  usecase.BedrockService
-	vertexAIService usecase.VertexAIService
-	statusService   usecase.StatusService
-	restartManager  usecase.RestartManager
+	ccService            usecase.CcService
+	metricsService       usecase.MetricsService
+	cursorService        usecase.CursorService
+	bedrockService       usecase.BedrockService
+	vertexAIService      usecase.VertexAIService
+	statusService        usecase.StatusService
+	restartManager       usecase.RestartManager
+	metricsDataCollector usecase.MetricsDataCollector
+	csvExportService     usecase.CSVExportService
 
 	// Presenters
 	consolePresenter presenter.ConsolePresenter
@@ -97,6 +100,14 @@ func NewContainer(opts ...ContainerOption) (*Container, error) {
 		opt(container)
 	}
 
+	// Debug: Log container state
+	if container.bedrockEnabled {
+		fmt.Fprintf(os.Stderr, "Debug: Bedrock is enabled via command line flag\n")
+	}
+	if container.vertexAIEnabled {
+		fmt.Fprintf(os.Stderr, "Debug: Vertex AI is enabled via command line flag\n")
+	}
+
 	// Load configuration
 	if err := container.initConfig(); err != nil {
 		return nil, fmt.Errorf("failed to initialize config: %w", err)
@@ -147,14 +158,19 @@ func NewContainer(opts ...ContainerOption) (*Container, error) {
 
 // initConfig initializes configuration
 func (c *Container) initConfig() error {
-	// Create config repository
-	c.configRepo = infraRepo.NewJSONConfigRepository()
+	// Create config repository if not already set
+	if c.configRepo == nil {
+		c.configRepo = infraRepo.NewJSONConfigRepository()
+	}
 
 	// Create temporary NoOpLogger for initial configuration loading
 	tempLogger := &logging.NoOpLogger{}
 
-	// Create config service with temporary logger
-	configService, err := impl.NewConfigService(c.configRepo, tempLogger)
+	// Create migration service
+	migrationService := impl.NewConfigMigrationService(tempLogger)
+
+	// Create config service with temporary logger and migration service
+	configService, err := impl.NewConfigService(c.configRepo, migrationService, tempLogger)
 	if err != nil {
 		// エラー耐性: 設定サービスの作成に失敗してもデフォルト設定で継続
 		c.config = config.DefaultConfig()
@@ -203,6 +219,7 @@ func (c *Container) initConfig() error {
 
 	// Override Bedrock enabled state if set via command line
 	if c.bedrockEnabled {
+		fmt.Fprintf(os.Stderr, "Debug: Setting up Bedrock configuration\n")
 		if cfg.Bedrock == nil {
 			cfg.Bedrock = &config.BedrockConfig{
 				Enabled:               true,
@@ -211,8 +228,10 @@ func (c *Container) initConfig() error {
 				AssumeRoleARN:         "",
 				CollectionIntervalSec: 900,
 			}
+			fmt.Fprintf(os.Stderr, "Debug: Created new Bedrock config\n")
 		} else {
 			cfg.Bedrock.Enabled = true
+			fmt.Fprintf(os.Stderr, "Debug: Updated existing Bedrock config\n")
 		}
 	}
 
@@ -266,6 +285,14 @@ func (c *Container) initLogging() error {
 
 // initRepositories initializes repository implementations
 func (c *Container) initRepositories() error {
+	// Debug: Log repository initialization
+	if c.debugMode {
+		fmt.Fprintf(os.Stderr, "Debug: Starting repository initialization\n")
+		fmt.Fprintf(os.Stderr, "Debug: bedrockEnabled=%v, vertexAIEnabled=%v\n", c.bedrockEnabled, c.vertexAIEnabled)
+		if c.config.Bedrock != nil {
+			fmt.Fprintf(os.Stderr, "Debug: Bedrock config exists, enabled=%v\n", c.config.Bedrock.Enabled)
+		}
+	}
 	// Initialize usage repository only if Bedrock and Vertex AI are not enabled
 	if !c.bedrockEnabled && !c.vertexAIEnabled {
 		c.ccRepo = infraRepo.NewJSONLCcRepository(c.config.ClaudePath)
@@ -290,12 +317,33 @@ func (c *Container) initRepositories() error {
 
 	// Initialize Bedrock repository if enabled
 	if c.config.Bedrock != nil && c.config.Bedrock.Enabled {
+		fmt.Fprintf(os.Stderr, "Debug: Attempting to initialize Bedrock repository\n")
 		bedrockRepo, err := infraRepo.NewBedrockCloudWatchRepository(c.config.Bedrock.AWSProfile)
 		if err != nil {
 			// Log warning but don't fail initialization
 			c.logger.Warn(context.TODO(), "Failed to initialize Bedrock repository", domain.NewField("error", err.Error()))
+			// Also output to stderr for immediate visibility
+			fmt.Fprintf(os.Stderr, "Warning: Failed to initialize Bedrock repository: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Please check your AWS credentials configuration.\n")
+
+			// In debug mode, provide more detailed information
+			if c.debugMode {
+				c.logger.Debug(context.TODO(), "Bedrock initialization details",
+					domain.NewField("aws_profile", c.config.Bedrock.AWSProfile),
+					domain.NewField("regions", c.config.Bedrock.Regions),
+					domain.NewField("error_type", fmt.Sprintf("%T", err)),
+					domain.NewField("error_details", err.Error()))
+				fmt.Fprintf(os.Stderr, "Debug: AWS Profile: %s\n", c.config.Bedrock.AWSProfile)
+				fmt.Fprintf(os.Stderr, "Debug: Regions: %v\n", c.config.Bedrock.Regions)
+			}
 		} else {
 			c.bedrockRepo = bedrockRepo
+			fmt.Fprintf(os.Stderr, "Debug: Bedrock repository initialized successfully\n")
+		}
+	} else {
+		if c.debugMode {
+			fmt.Fprintf(os.Stderr, "Debug: Bedrock repository not initialized (config=%v, enabled=%v)\n",
+				c.config.Bedrock != nil, c.config.Bedrock != nil && c.config.Bedrock.Enabled)
 		}
 	}
 
@@ -304,12 +352,31 @@ func (c *Container) initRepositories() error {
 		if c.config.VertexAI.ProjectID == "" {
 			c.logger.Warn(context.TODO(), "Vertex AI is enabled but project ID is not set",
 				domain.NewField("hint", "Set TOSAGE_VERTEX_AI_PROJECT_ID or GOOGLE_CLOUD_PROJECT environment variable"))
+			// Also output to stderr for immediate visibility
+			fmt.Fprintf(os.Stderr, "Warning: Vertex AI is enabled but project ID is not set\n")
+			fmt.Fprintf(os.Stderr, "Please set GOOGLE_CLOUD_PROJECT environment variable.\n")
 		} else {
 			// Use REST repository with retry logic
 			vertexAIRepo, err := infraRepo.NewVertexAIRESTRepository(c.config.VertexAI.ProjectID, c.config.VertexAI.ServiceAccountKeyPath)
 			if err != nil {
 				// Log warning but don't fail initialization
 				c.logger.Warn(context.TODO(), "Failed to initialize Vertex AI repository", domain.NewField("error", err.Error()))
+				// Also output to stderr for immediate visibility
+				fmt.Fprintf(os.Stderr, "Warning: Failed to initialize Vertex AI repository: %v\n", err)
+				fmt.Fprintf(os.Stderr, "Please check your Google Cloud credentials configuration.\n")
+
+				// In debug mode, provide more detailed information
+				if c.debugMode {
+					c.logger.Debug(context.TODO(), "Vertex AI initialization details",
+						domain.NewField("project_id", c.config.VertexAI.ProjectID),
+						domain.NewField("service_account_key_path", c.config.VertexAI.ServiceAccountKeyPath),
+						domain.NewField("locations", c.config.VertexAI.Locations),
+						domain.NewField("error_type", fmt.Sprintf("%T", err)),
+						domain.NewField("error_details", err.Error()))
+					fmt.Fprintf(os.Stderr, "Debug: Project ID: %s\n", c.config.VertexAI.ProjectID)
+					fmt.Fprintf(os.Stderr, "Debug: Service Account Key Path: %s\n", c.config.VertexAI.ServiceAccountKeyPath)
+					fmt.Fprintf(os.Stderr, "Debug: Locations: %v\n", c.config.VertexAI.Locations)
+				}
 			} else {
 				c.vertexAIRepo = vertexAIRepo
 				c.logger.Info(context.TODO(), "Vertex AI REST repository initialized with retry logic",
@@ -318,6 +385,9 @@ func (c *Container) initRepositories() error {
 			}
 		}
 	}
+
+	// Initialize CSV writer repository
+	c.csvWriterRepo = infraRepo.NewCSVWriterRepository(c.CreateLogger("csv-writer"))
 
 	return nil
 }
@@ -353,7 +423,7 @@ func (c *Container) initUseCases() error {
 			AssumeRoleARN:      c.config.Bedrock.AssumeRoleARN,
 			CollectionInterval: time.Duration(c.config.Bedrock.CollectionIntervalSec) * time.Second,
 		}
-		c.bedrockService = impl.NewBedrockService(c.bedrockRepo, bedrockConfig)
+		c.bedrockService = impl.NewBedrockService(c.bedrockRepo, bedrockConfig, c.CreateLogger("bedrock"))
 	}
 
 	// Initialize Vertex AI service if configured
@@ -374,6 +444,22 @@ func (c *Container) initUseCases() error {
 		return fmt.Errorf("failed to create restart manager: %w", err)
 	}
 	c.restartManager = restartManager
+
+	// Initialize Metrics Data Collector
+	c.metricsDataCollector = impl.NewMetricsDataCollector(
+		c.ccService,
+		c.cursorService,
+		c.bedrockService,
+		c.vertexAIService,
+		c.CreateLogger("metrics-collector"),
+	)
+
+	// Initialize CSV Export Service
+	c.csvExportService = impl.NewCSVExportService(
+		c.metricsDataCollector,
+		c.csvWriterRepo,
+		c.CreateLogger("csv-export"),
+	)
 
 	return nil
 }
@@ -549,6 +635,11 @@ func (c *Container) GetTimezoneService() repository.TimezoneService {
 	return c.timezoneService
 }
 
+// GetCSVExportService returns the CSV export service
+func (c *Container) GetCSVExportService() usecase.CSVExportService {
+	return c.csvExportService
+}
+
 // InitDaemonComponents initializes daemon components on demand
 func (c *Container) InitDaemonComponents() error {
 	return c.initDaemonPlatform()
@@ -630,7 +721,8 @@ func (b *ContainerBuilder) Build() (*Container, error) {
 		container.config = b.config
 		// Create config service with custom config using temporary logger
 		tempLogger := &logging.NoOpLogger{}
-		configService, err := impl.NewConfigService(container.configRepo, tempLogger)
+		migrationService := impl.NewConfigMigrationService(tempLogger)
+		configService, err := impl.NewConfigService(container.configRepo, migrationService, tempLogger)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create config service: %w", err)
 		}

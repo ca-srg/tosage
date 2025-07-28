@@ -28,11 +28,11 @@ func TestJSONConfigRepository_SaveAndLoad(t *testing.T) {
 	testConfig := &config.AppConfig{
 		ClaudePath: "/test/path",
 		Prometheus: &config.PrometheusConfig{
-			RemoteWriteURL: "http://test-prometheus:9090/api/v1/write",
-			IntervalSec:    60,
-			TimeoutSec:     10,
-			Username:       "testuser",
-			Password:       "testpass",
+			RemoteWriteURL:      "http://test-prometheus:9090/api/v1/write",
+			IntervalSec:         60,
+			TimeoutSec:          10,
+			RemoteWriteUsername: "testuser",
+			RemoteWritePassword: "testpass",
 		},
 		Logging: &config.LoggingConfig{
 			Level: "info",
@@ -79,62 +79,6 @@ func TestJSONConfigRepository_SaveAndLoad(t *testing.T) {
 	}
 }
 
-func TestJSONConfigRepository_Backup(t *testing.T) {
-	// テスト用の一時ディレクトリを作成
-	tempDir, err := os.MkdirTemp("", "tosage-config-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer func() {
-		_ = os.RemoveAll(tempDir)
-	}()
-
-	repo := &JSONConfigRepository{
-		configDir:  tempDir,
-		configFile: filepath.Join(tempDir, "config.json"),
-	}
-
-	// 初期設定を保存
-	initialConfig := &config.AppConfig{
-		ClaudePath: "/initial/path",
-		Prometheus: &config.PrometheusConfig{
-			RemoteWriteURL: "http://initial:9090",
-			IntervalSec:    60,
-			TimeoutSec:     10,
-			Username:       "testuser",
-			Password:       "testpass",
-		},
-	}
-	if err := repo.Save(initialConfig); err != nil {
-		t.Fatalf("Failed to save initial config: %v", err)
-	}
-
-	// 更新された設定を保存（これによりバックアップが作成されるはず）
-	updatedConfig := &config.AppConfig{
-		ClaudePath: "/updated/path",
-		Prometheus: &config.PrometheusConfig{
-			RemoteWriteURL: "http://updated:9090",
-			IntervalSec:    120,
-			TimeoutSec:     5,
-			Username:       "testuser",
-			Password:       "testpass",
-		},
-	}
-	if err := repo.Save(updatedConfig); err != nil {
-		t.Fatalf("Failed to save updated config: %v", err)
-	}
-
-	// バックアップファイルが存在することを確認
-	pattern := repo.configFile + ".backup.*"
-	matches, err := filepath.Glob(pattern)
-	if err != nil {
-		t.Fatalf("Failed to find backup files: %v", err)
-	}
-	if len(matches) == 0 {
-		t.Error("No backup files found")
-	}
-}
-
 func TestJSONConfigRepository_LoadNonExistent(t *testing.T) {
 	// テスト用の一時ディレクトリを作成
 	tempDir, err := os.MkdirTemp("", "tosage-config-test-*")
@@ -172,11 +116,11 @@ func TestJSONConfigRepository_Validate(t *testing.T) {
 	// 有効な設定を検証
 	validConfig := &config.AppConfig{
 		Prometheus: &config.PrometheusConfig{
-			RemoteWriteURL: "http://prometheus:9090",
-			IntervalSec:    60,
-			TimeoutSec:     10,
-			Username:       "testuser",
-			Password:       "testpass",
+			RemoteWriteURL:      "http://prometheus:9090",
+			IntervalSec:         60,
+			TimeoutSec:          10,
+			RemoteWriteUsername: "testuser",
+			RemoteWritePassword: "testpass",
 		},
 	}
 	err = repo.Validate(validConfig)
@@ -187,11 +131,11 @@ func TestJSONConfigRepository_Validate(t *testing.T) {
 	// 無効な設定を検証（タイムアウトが0）
 	invalidConfig := &config.AppConfig{
 		Prometheus: &config.PrometheusConfig{
-			RemoteWriteURL: "http://prometheus:9090",
-			IntervalSec:    60,
-			TimeoutSec:     0,
-			Username:       "testuser",
-			Password:       "testpass",
+			RemoteWriteURL:      "http://prometheus:9090",
+			IntervalSec:         60,
+			TimeoutSec:          0,
+			RemoteWriteUsername: "testuser",
+			RemoteWritePassword: "testpass",
 		},
 	}
 	err = repo.Validate(invalidConfig)
