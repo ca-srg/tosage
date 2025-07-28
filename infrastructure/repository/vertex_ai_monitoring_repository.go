@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"cloud.google.com/go/monitoring/apiv3/v2"
@@ -18,8 +19,8 @@ import (
 
 // VertexAIMonitoringRepository implements VertexAIRepository using Google Cloud Monitoring
 type VertexAIMonitoringRepository struct {
-	client               *monitoring.MetricClient
-	projectID            string
+	client                *monitoring.MetricClient
+	projectID             string
 	serviceAccountKeyPath string
 }
 
@@ -38,8 +39,8 @@ func NewVertexAIMonitoringRepository(projectID, serviceAccountKeyPath string) (*
 	}
 
 	return &VertexAIMonitoringRepository{
-		client:               client,
-		projectID:            projectID,
+		client:                client,
+		projectID:             projectID,
 		serviceAccountKeyPath: serviceAccountKeyPath,
 	}, nil
 }
@@ -48,16 +49,26 @@ func NewVertexAIMonitoringRepository(projectID, serviceAccountKeyPath string) (*
 func (r *VertexAIMonitoringRepository) GetUsageMetrics(projectID, location string, start, end time.Time) (*entity.VertexAIUsage, error) {
 	ctx := context.Background()
 
+	log.Printf("[DEBUG] GetUsageMetrics called with projectID=%s, location=%s, start=%v, end=%v",
+		projectID, location, start.Format(time.RFC3339), end.Format(time.RFC3339))
+
+	// Debug: List available metrics
+	r.debugListMetrics(ctx, projectID, location, start, end)
+
 	// Get input tokens
 	inputTokens, err := r.getMetricValue(ctx, projectID, "aiplatform.googleapis.com/prediction/input_token_count", location, start, end)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get input tokens: %w", err)
+		// Log the error but continue with 0
+		log.Printf("[DEBUG] Failed to get input tokens: %v", err)
+		inputTokens = 0
 	}
 
 	// Get output tokens
 	outputTokens, err := r.getMetricValue(ctx, projectID, "aiplatform.googleapis.com/prediction/output_token_count", location, start, end)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get output tokens: %w", err)
+		// Log the error but continue with 0
+		log.Printf("[DEBUG] Failed to get output tokens: %v", err)
+		outputTokens = 0
 	}
 
 	// Get model-specific metrics
@@ -179,6 +190,59 @@ func (r *VertexAIMonitoringRepository) checkLocationActivity(projectID, location
 	return true, nil // Activity found
 }
 
+// debugListMetrics lists available metrics for debugging
+func (r *VertexAIMonitoringRepository) debugListMetrics(ctx context.Context, projectID, location string, start, end time.Time) {
+	projectName := fmt.Sprintf("projects/%s", projectID)
+	// Try different filters to find metrics
+	filters := []string{
+		fmt.Sprintf(`resource.type=~".*aiplatform.*" AND resource.labels.location="%s"`, location),
+		fmt.Sprintf(`metric.type=~".*aiplatform.*" AND resource.labels.location="%s"`, location),
+		`metric.type=~".*aiplatform.*"`,
+		`resource.type=~".*aiplatform.*"`,
+	}
+
+	for _, filter := range filters {
+		log.Printf("[DEBUG] Trying filter: %s", filter)
+
+		req := &monitoringpb.ListTimeSeriesRequest{
+			Name:   projectName,
+			Filter: filter,
+			Interval: &monitoringpb.TimeInterval{
+				StartTime: timestamppb.New(start),
+				EndTime:   timestamppb.New(end),
+			},
+			View: monitoringpb.ListTimeSeriesRequest_HEADERS,
+		}
+
+		it := r.client.ListTimeSeries(ctx, req)
+		count := 0
+		for {
+			ts, err := it.Next()
+			if err == iterator.Done {
+				break
+			}
+			if err != nil {
+				log.Printf("[DEBUG] Error with filter '%s': %v", filter, err)
+				break
+			}
+
+			log.Printf("[DEBUG] Found metric: type=%s, resource.type=%s, resource.labels=%v",
+				ts.Metric.Type, ts.Resource.Type, ts.Resource.Labels)
+			count++
+			if count > 5 {
+				break
+			}
+		}
+
+		if count > 0 {
+			log.Printf("[DEBUG] Found %d metrics with filter: %s", count, filter)
+			return
+		}
+	}
+
+	log.Printf("[DEBUG] No metrics found in any filter for project %s", projectID)
+}
+
 // getMetricValue retrieves a metric value from Cloud Monitoring
 func (r *VertexAIMonitoringRepository) getMetricValue(
 	ctx context.Context,
@@ -186,7 +250,8 @@ func (r *VertexAIMonitoringRepository) getMetricValue(
 	start, end time.Time,
 ) (float64, error) {
 	projectName := fmt.Sprintf("projects/%s", projectID)
-	filter := fmt.Sprintf(`metric.type="%s" AND resource.labels.location="%s"`, metricType, location)
+	// Try both resource types for compatibility
+	filter := fmt.Sprintf(`metric.type="%s" AND (resource.type="aiplatform.googleapis.com/Model" OR resource.type="aiplatform.googleapis.com/PublisherModel") AND resource.labels.location="%s"`, metricType, location)
 
 	req := &monitoringpb.ListTimeSeriesRequest{
 		Name:   projectName,

@@ -6,33 +6,42 @@
   <img src="assets/icon.png" alt="tosage logo" width="256" height="256">
 </p>
 
-A Go application that tracks Claude Code and Cursor token usage and sends metrics to Prometheus. It can run in CLI mode (outputs today's token count) or daemon mode (system tray application with periodic metrics sending).
+A Go application that tracks token usage from Claude Code, Cursor, AWS Bedrock, and Google Vertex AI, and sends metrics to Prometheus. It can run in CLI mode (outputs today's token count) or daemon mode (system tray application with periodic metrics sending).
 
 ## Features
 
-- **Token Usage Tracking**: Monitors token usage from both Claude Code and Cursor
+- **Multi-Provider Token Tracking**: Monitors token usage from Claude Code, Cursor, AWS Bedrock, and Google Vertex AI
 - **Prometheus Integration**: Sends metrics via remote write API
 - **Dual Mode Operation**: CLI mode for quick checks, daemon mode for continuous monitoring
-- **macOS System Tray**: Native system tray support for daemon mode
+- **macOS System Tray**: Native system tray support for daemon mode (Claude Code/Cursor only)
 - **Automatic Data Discovery**: Finds Claude Code data across multiple locations
-- **Cursor API Integration**: Fetches premium request usage and pricing information
+- **API Integrations**: 
+  - Cursor API for premium request usage and pricing
+  - AWS CloudWatch for Bedrock metrics
+  - Google Cloud Monitoring for Vertex AI metrics
 
 ```mermaid
 flowchart TD
     subgraph "Data Sources"
         CC[Claude Code<br/>Local Directories]
         CA[Cursor API]
+        AWSCW[AWS CloudWatch<br/>Bedrock Metrics]
+        GCPM[Google Cloud<br/>Vertex AI Metrics]
     end
     
     subgraph "Infrastructure Layer"
         JSONL[JSONL Repository<br/>Read Claude Code data files]
         CAPI[Cursor API Repository<br/>Fetch usage data]
         CDB[Cursor DB Repository<br/>SQLite storage]
+        BR[Bedrock Repository<br/>CloudWatch API]
+        VAR[Vertex AI Repository<br/>Monitoring API]
     end
     
     subgraph "Use Case Layer"
         CCS[Claude Code Service<br/>Process token usage]
         CS[Cursor Service<br/>Process API data & track tokens]
+        BS[Bedrock Service<br/>Process AWS metrics]
+        VAS[Vertex AI Service<br/>Process GCP metrics]
         MS[Metrics Service<br/>Collect & aggregate metrics]
     end
     
@@ -42,11 +51,17 @@ flowchart TD
     
     CC --> JSONL
     CA --> CAPI
+    AWSCW --> BR
+    GCPM --> VAR
     JSONL --> CCS
     CAPI --> CDB
     CDB --> CS
+    BR --> BS
+    VAR --> VAS
     CCS --> MS
     CS --> MS
+    BS --> MS
+    VAS --> MS
     MS --> PROM
 ```
 
@@ -60,7 +75,8 @@ Import the [Grafana dashboard configuration](./assets/grafana.json) to visualize
 - Token usage per person per hour
 - Team-wide token usage trends
 - Daily token totals
-- Tool breakdown (Claude Code vs Cursor)
+- Tool breakdown (Claude Code, Cursor, Bedrock, Vertex AI)
+- Multi-cloud AI service cost tracking
 
 ## Installation
 
@@ -140,11 +156,46 @@ $ cat ~/.config/tosage/config.json
       "username": "",
       "password": ""
     }
+  },
+  "bedrock": {
+    "enabled": false,
+    "regions": ["us-east-1", "us-west-2"],
+    "aws_profile": "",
+    "assume_role_arn": "",
+    "collection_interval_sec": 900
+  },
+  "vertex_ai": {
+    "enabled": false,
+    "project_id": "",
+    "locations": ["us-central1", "us-east1", "asia-northeast1"],
+    "service_account_key_path": "",
+    "collection_interval_sec": 900
   }
 }
 
 # 3. Run again
 ```
+
+### AWS Bedrock Configuration
+
+To enable Bedrock metrics:
+1. Set `bedrock.enabled` to `true`
+2. Configure AWS credentials using one of:
+   - `aws_profile`: AWS profile name from ~/.aws/credentials
+   - `assume_role_arn`: IAM role ARN to assume
+   - Default AWS credential chain (environment variables, IAM role, etc.)
+3. Specify regions to monitor in `bedrock.regions`
+
+### Google Vertex AI Configuration
+
+To enable Vertex AI metrics:
+1. Set `vertex_ai.enabled` to `true`
+2. Set `vertex_ai.project_id` to your GCP project ID
+3. Configure GCP credentials using one of:
+   - `service_account_key_path`: Path to service account JSON key file
+   - Environment variable `GOOGLE_APPLICATION_CREDENTIALS`
+   - Default GCP credential chain (gcloud auth, metadata service, etc.)
+4. Specify locations to monitor in `vertex_ai.locations`
 
 ## Usage
 
@@ -153,16 +204,27 @@ $ cat ~/.config/tosage/config.json
 Outputs today's token count:
 
 ```bash
+# Claude Code and Cursor tokens (default)
 tosage
+
+# AWS Bedrock metrics only
+tosage --bedrock
+
+# Google Vertex AI metrics only
+tosage --vertex-ai
 ```
+
+**Note**: When using `--bedrock` or `--vertex-ai` flags, Claude Code and Cursor metrics are skipped.
 
 ### Daemon Mode
 
-Runs as a system tray application with periodic metrics sending:
+Runs as a system tray application with periodic metrics sending (Claude Code/Cursor only):
 
 ```bash
 tosage -d
 ```
+
+**Note**: Daemon mode is not supported when using `--bedrock` or `--vertex-ai` flags.
 
 ## Building
 
@@ -301,6 +363,8 @@ The project follows Clean Architecture with clear separation of concerns:
 - **Services**: Business logic implementation
   - Claude Code data processing
   - Cursor API integration and token tracking
+  - AWS Bedrock CloudWatch metrics processing
+  - Google Vertex AI monitoring metrics processing
   - Metrics collection and sending
   - Application status tracking
 
@@ -323,6 +387,18 @@ Uses Cursor API to fetch:
 - Premium (GPT-4) request usage
 - Usage-based pricing information
 - Team membership status
+
+### AWS Bedrock
+Uses CloudWatch API to fetch:
+- Input/output token counts per model
+- Daily aggregated usage
+- Multi-region support
+
+### Google Vertex AI
+Uses Cloud Monitoring API to fetch:
+- Token usage by model and location
+- Daily aggregated metrics
+- Multi-location support
 
 
 ## Notes
@@ -377,8 +453,8 @@ Uses Cursor API to fetch:
 
 ## TODO
 
-- [ ] Add Vertex AI token usage tracking
-- [ ] Add Amazon Bedrock token usage tracking
+- [x] Add Vertex AI token usage tracking
+- [x] Add Amazon Bedrock token usage tracking
 
 ## GitHub Actions Setup
 

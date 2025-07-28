@@ -17,7 +17,7 @@ func (c *Container) GetSystrayController() interface{} {
 	return nil
 }
 
-// GetDaemonController returns nil on non-Darwin platforms  
+// GetDaemonController returns nil on non-Darwin platforms
 func (c *Container) GetDaemonController() interface{} {
 	return nil
 }

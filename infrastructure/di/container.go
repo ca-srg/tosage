@@ -1,6 +1,7 @@
 package di
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"time"
@@ -41,7 +42,7 @@ type Container struct {
 	bedrockService  usecase.BedrockService
 	vertexAIService usecase.VertexAIService
 	statusService   usecase.StatusService
-	restartManager usecase.RestartManager
+	restartManager  usecase.RestartManager
 
 	// Presenters
 	consolePresenter presenter.ConsolePresenter
@@ -220,13 +221,17 @@ func (c *Container) initConfig() error {
 		if cfg.VertexAI == nil {
 			cfg.VertexAI = &config.VertexAIConfig{
 				Enabled:               true,
-				ProjectID:             "",
-				Locations:             []string{"us-central1", "us-east1"},
+				ProjectID:             os.Getenv("GOOGLE_CLOUD_PROJECT"), // Try to get from environment
+				Locations:             []string{"us-central1", "us-east1", "asia-northeast1"},
 				ServiceAccountKeyPath: "",
 				CollectionIntervalSec: 900,
 			}
 		} else {
 			cfg.VertexAI.Enabled = true
+			// If ProjectID is still empty, try to get from environment
+			if cfg.VertexAI.ProjectID == "" {
+				cfg.VertexAI.ProjectID = os.Getenv("GOOGLE_CLOUD_PROJECT")
+			}
 		}
 	}
 
@@ -261,22 +266,26 @@ func (c *Container) initLogging() error {
 
 // initRepositories initializes repository implementations
 func (c *Container) initRepositories() error {
-	// Initialize usage repository
-	c.ccRepo = infraRepo.NewJSONLCcRepository(c.config.ClaudePath)
+	// Initialize usage repository only if Bedrock and Vertex AI are not enabled
+	if !c.bedrockEnabled && !c.vertexAIEnabled {
+		c.ccRepo = infraRepo.NewJSONLCcRepository(c.config.ClaudePath)
+	}
 
-	// Initialize Cursor repositories only if Cursor config exists
-	if c.config.Cursor != nil {
-		c.cursorTokenRepo = infraRepo.NewCursorDBRepository(c.config.Cursor.DatabasePath)
-		c.cursorAPIRepo = infraRepo.NewCursorAPIRepository(time.Duration(c.config.Cursor.APITimeout) * time.Second)
-	} else {
-		// Create default Cursor config if not exists
-		c.config.Cursor = &config.CursorConfig{
-			DatabasePath: "",
-			APITimeout:   30,
-			CacheTimeout: 300,
+	// Initialize Cursor repositories only if Bedrock and Vertex AI are not enabled and if Cursor config exists
+	if !c.bedrockEnabled && !c.vertexAIEnabled {
+		if c.config.Cursor != nil {
+			c.cursorTokenRepo = infraRepo.NewCursorDBRepository(c.config.Cursor.DatabasePath)
+			c.cursorAPIRepo = infraRepo.NewCursorAPIRepository(time.Duration(c.config.Cursor.APITimeout) * time.Second)
+		} else {
+			// Create default Cursor config if not exists
+			c.config.Cursor = &config.CursorConfig{
+				DatabasePath: "",
+				APITimeout:   30,
+				CacheTimeout: 300,
+			}
+			c.cursorTokenRepo = infraRepo.NewCursorDBRepository(c.config.Cursor.DatabasePath)
+			c.cursorAPIRepo = infraRepo.NewCursorAPIRepository(time.Duration(c.config.Cursor.APITimeout) * time.Second)
 		}
-		c.cursorTokenRepo = infraRepo.NewCursorDBRepository(c.config.Cursor.DatabasePath)
-		c.cursorAPIRepo = infraRepo.NewCursorAPIRepository(time.Duration(c.config.Cursor.APITimeout) * time.Second)
 	}
 
 	// Initialize Bedrock repository if enabled
@@ -284,7 +293,7 @@ func (c *Container) initRepositories() error {
 		bedrockRepo, err := infraRepo.NewBedrockCloudWatchRepository(c.config.Bedrock.AWSProfile)
 		if err != nil {
 			// Log warning but don't fail initialization
-			c.logger.Warn(nil, "Failed to initialize Bedrock repository", domain.NewField("error", err.Error()))
+			c.logger.Warn(context.TODO(), "Failed to initialize Bedrock repository", domain.NewField("error", err.Error()))
 		} else {
 			c.bedrockRepo = bedrockRepo
 		}
@@ -292,12 +301,21 @@ func (c *Container) initRepositories() error {
 
 	// Initialize Vertex AI repository if enabled
 	if c.config.VertexAI != nil && c.config.VertexAI.Enabled {
-		vertexAIRepo, err := infraRepo.NewVertexAIMonitoringRepository(c.config.VertexAI.ProjectID, c.config.VertexAI.ServiceAccountKeyPath)
-		if err != nil {
-			// Log warning but don't fail initialization
-			c.logger.Warn(nil, "Failed to initialize Vertex AI repository", domain.NewField("error", err.Error()))
+		if c.config.VertexAI.ProjectID == "" {
+			c.logger.Warn(context.TODO(), "Vertex AI is enabled but project ID is not set",
+				domain.NewField("hint", "Set TOSAGE_VERTEX_AI_PROJECT_ID or GOOGLE_CLOUD_PROJECT environment variable"))
 		} else {
-			c.vertexAIRepo = vertexAIRepo
+			// Use REST repository with retry logic
+			vertexAIRepo, err := infraRepo.NewVertexAIRESTRepository(c.config.VertexAI.ProjectID, c.config.VertexAI.ServiceAccountKeyPath)
+			if err != nil {
+				// Log warning but don't fail initialization
+				c.logger.Warn(context.TODO(), "Failed to initialize Vertex AI repository", domain.NewField("error", err.Error()))
+			} else {
+				c.vertexAIRepo = vertexAIRepo
+				c.logger.Info(context.TODO(), "Vertex AI REST repository initialized with retry logic",
+					domain.NewField("project_id", c.config.VertexAI.ProjectID),
+					domain.NewField("locations", c.config.VertexAI.Locations))
+			}
 		}
 	}
 
@@ -313,13 +331,16 @@ func (c *Container) initDomainServices() error {
 
 // initUseCases initializes use case implementations
 func (c *Container) initUseCases() error {
-	c.ccService = impl.NewCcServiceImpl(c.ccRepo, c.timezoneService)
+	// Initialize CC service only if Bedrock and Vertex AI are not enabled
+	if !c.bedrockEnabled && !c.vertexAIEnabled {
+		c.ccService = impl.NewCcServiceImpl(c.ccRepo, c.timezoneService)
+	}
 
 	// Initialize Status service
 	c.statusService = impl.NewStatusService()
 
-	// Initialize Cursor service if configured
-	if c.config.Cursor != nil && c.cursorTokenRepo != nil && c.cursorAPIRepo != nil {
+	// Initialize Cursor service only if Bedrock and Vertex AI are not enabled and if configured
+	if !c.bedrockEnabled && !c.vertexAIEnabled && c.config.Cursor != nil && c.cursorTokenRepo != nil && c.cursorAPIRepo != nil {
 		c.cursorService = impl.NewCursorService(c.cursorTokenRepo, c.cursorAPIRepo, c.config.Cursor)
 	}
 
@@ -366,6 +387,8 @@ func (c *Container) initPresenters() error {
 
 // initControllers initializes controller implementations
 func (c *Container) initControllers() error {
+	// Only create CLI controller if we have ccService or if it's explicitly needed
+	// When Bedrock or Vertex AI is enabled, ccService will be nil
 	c.cliController = newCLIController(
 		c.ccService,
 		c.consolePresenter,
@@ -407,7 +430,6 @@ func (c *Container) initPrometheus() error {
 
 	return nil
 }
-
 
 // GetConfig returns the application configuration
 func (c *Container) GetConfig() *config.AppConfig {
@@ -488,7 +510,6 @@ func (c *Container) GetVertexAIRepository() repository.VertexAIRepository {
 func (c *Container) GetStatusService() usecase.StatusService {
 	return c.statusService
 }
-
 
 // GetLoggerFactory returns the logger factory
 func (c *Container) GetLoggerFactory() domain.LoggerFactory {

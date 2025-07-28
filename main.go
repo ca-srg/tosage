@@ -16,10 +16,11 @@ import (
 func main() {
 	// Parse command line flags
 	var (
-		cliMode        = flag.Bool("cli", false, "Run in CLI mode (default is daemon mode on macOS)")
-		daemonMode     = flag.Bool("daemon", false, "Run in daemon mode (macOS only)")
-		debugMode      = flag.Bool("debug", false, "Enable debug logging to stdout")
-		includeBedrock = flag.Bool("bedrock", false, "Include AWS Bedrock usage metrics (requires AWS credentials)")
+		cliMode         = flag.Bool("cli", false, "Run in CLI mode (default is daemon mode on macOS)")
+		daemonMode      = flag.Bool("daemon", false, "Run in daemon mode (macOS only)")
+		debugMode       = flag.Bool("debug", false, "Enable debug logging to stdout")
+		includeBedrock  = flag.Bool("bedrock", false, "Include AWS Bedrock usage metrics (requires AWS credentials)")
+		includeVertexAI = flag.Bool("vertex-ai", false, "Include Google Vertex AI usage metrics (requires Google Cloud credentials)")
 	)
 	flag.Parse()
 
@@ -30,6 +31,9 @@ func main() {
 	}
 	if *includeBedrock {
 		opts = append(opts, di.WithBedrockEnabled(true))
+	}
+	if *includeVertexAI {
+		opts = append(opts, di.WithVertexAIEnabled(true))
 	}
 
 	container, err := di.NewContainer(opts...)
@@ -47,6 +51,12 @@ func main() {
 		runDaemon = true
 	} else if !*cliMode && config.Daemon != nil && config.Daemon.Enabled {
 		runDaemon = true
+	}
+
+	// Daemon mode is not supported when Bedrock or Vertex AI flags are set
+	if runDaemon && (*includeBedrock || *includeVertexAI) {
+		fmt.Fprintf(os.Stderr, "Daemon mode is not supported when --bedrock or --vertex-ai flags are set\n")
+		os.Exit(1)
 	}
 
 	// Run in appropriate mode
@@ -86,7 +96,13 @@ func runCLIMode(container *di.Container) {
 		fmt.Fprintf(os.Stderr, "CLI controller not available\n")
 		os.Exit(1)
 	}
-	
+
+	// Skip Claude Code and Cursor metrics if Bedrock or Vertex AI is enabled
+	config := container.GetConfig()
+	if (config.Bedrock != nil && config.Bedrock.Enabled) || (config.VertexAI != nil && config.VertexAI.Enabled) {
+		cliController.SetSkipCCMetrics(true)
+	}
+
 	metricsService := container.GetMetricsService()
 
 	// Get logger
@@ -116,23 +132,13 @@ func runDaemonMode(container *di.Container) {
 	logger := container.CreateLogger("main")
 	ctx := context.Background()
 
-	daemonControllerIface := container.GetDaemonController()
-	if daemonControllerIface == nil {
+	daemonController := container.GetDaemonController()
+	if daemonController == nil {
 		logger.Error(ctx, "Daemon mode is not available. Please check your configuration.")
 		os.Exit(1)
 	}
 
-	// Try to cast to the expected type
-	type DaemonRunner interface {
-		Run()
-	}
-	
-	if runner, ok := daemonControllerIface.(DaemonRunner); ok {
-		// Run the daemon controller on the main thread
-		// This is required for macOS GUI components
-		runner.Run()
-	} else {
-		logger.Error(ctx, "Daemon controller does not support Run method")
-		os.Exit(1)
-	}
+	// Run the daemon controller on the main thread
+	// This is required for macOS GUI components
+	daemonController.Run()
 }

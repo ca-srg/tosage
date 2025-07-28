@@ -14,11 +14,11 @@ import (
 
 // SystrayController manages the system tray menu and interactions
 type SystrayController struct {
-	ccService      usecase.CcService
-	statusService  usecase.StatusService
-	metricsService usecase.MetricsService
-	configService  usecase.ConfigService
-	bedrockService usecase.BedrockService
+	ccService       usecase.CcService
+	statusService   usecase.StatusService
+	metricsService  usecase.MetricsService
+	configService   usecase.ConfigService
+	bedrockService  usecase.BedrockService
 	vertexAIService usecase.VertexAIService
 
 	// Menu items

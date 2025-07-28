@@ -13,6 +13,7 @@ type CLIController struct {
 	ccService        usecase.CcService
 	consolePresenter presenter.ConsolePresenter
 	jsonPresenter    presenter.JSONPresenter
+	skipCCMetrics    bool
 }
 
 // NewCLIController creates a new CLI controller
@@ -28,8 +29,18 @@ func NewCLIController(
 	}
 }
 
+// SetSkipCCMetrics sets whether to skip Claude Code and Cursor metrics
+func (c *CLIController) SetSkipCCMetrics(skip bool) {
+	c.skipCCMetrics = skip
+}
+
 // Run executes the CLI controller - always shows today's tokens in JST
 func (c *CLIController) Run() error {
+	// If skip CC metrics is enabled or ccService is nil, just return without doing anything
+	if c.skipCCMetrics || c.ccService == nil {
+		return nil
+	}
+
 	// Get JST timezone
 	jst, err := time.LoadLocation("Asia/Tokyo")
 	if err != nil {

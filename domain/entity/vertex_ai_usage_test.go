@@ -7,14 +7,14 @@ import (
 
 func TestNewVertexAIUsage(t *testing.T) {
 	tests := []struct {
-		name           string
-		inputTokens    int64
-		outputTokens   int64
-		totalCost      float64
-		modelMetrics   []VertexAIModelMetric
-		projectID      string
-		location       string
-		expectedError  string
+		name          string
+		inputTokens   int64
+		outputTokens  int64
+		totalCost     float64
+		modelMetrics  []VertexAIModelMetric
+		projectID     string
+		location      string
+		expectedError string
 	}{
 		{
 			name:         "valid usage",
@@ -299,31 +299,31 @@ func TestVertexAIUsage_CalculateAverageLatency(t *testing.T) {
 
 func TestVertexAIUsage_IsEmpty(t *testing.T) {
 	tests := []struct {
-		name         string
-		inputTokens  int64
-		outputTokens int64
-		totalCost    float64
+		name          string
+		inputTokens   int64
+		outputTokens  int64
+		totalCost     float64
 		expectedEmpty bool
 	}{
 		{
-			name:         "empty usage",
-			inputTokens:  0,
-			outputTokens: 0,
-			totalCost:    0,
+			name:          "empty usage",
+			inputTokens:   0,
+			outputTokens:  0,
+			totalCost:     0,
 			expectedEmpty: true,
 		},
 		{
-			name:         "non-empty tokens",
-			inputTokens:  100,
-			outputTokens: 0,
-			totalCost:    0,
+			name:          "non-empty tokens",
+			inputTokens:   100,
+			outputTokens:  0,
+			totalCost:     0,
 			expectedEmpty: false,
 		},
 		{
-			name:         "non-empty cost",
-			inputTokens:  0,
-			outputTokens: 0,
-			totalCost:    1.50,
+			name:          "non-empty cost",
+			inputTokens:   0,
+			outputTokens:  0,
+			totalCost:     1.50,
 			expectedEmpty: false,
 		},
 	}

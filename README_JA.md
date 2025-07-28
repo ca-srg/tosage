@@ -4,33 +4,42 @@
   <img src="assets/icon.png" alt="tosage logo" width="256" height="256">
 </p>
 
-Claude CodeとCursorのトークン使用量を追跡し、Prometheusにメトリクスを送信するGoアプリケーションです。CLIモード（当日のトークン数を出力）またはデーモンモード（定期的にメトリクスを送信するシステムトレイアプリケーション）で実行できます。
+Claude Code、Cursor、AWS Bedrock、Google Vertex AIのトークン使用量を追跡し、Prometheusにメトリクスを送信するGoアプリケーションです。CLIモード（当日のトークン数を出力）またはデーモンモード（定期的にメトリクスを送信するシステムトレイアプリケーション）で実行できます。
 
 ## 機能
 
-- **トークン使用量追跡**: Claude CodeとCursorの両方のトークン使用量を監視
+- **マルチプロバイダートークン追跡**: Claude Code、Cursor、AWS Bedrock、Google Vertex AIのトークン使用量を監視
 - **Prometheus統合**: リモートライトAPIを介したメトリクス送信
 - **デュアルモード動作**: 素早い確認のためのCLIモード、継続的な監視のためのデーモンモード
-- **macOSシステムトレイ**: デーモンモード用のネイティブシステムトレイサポート
+- **macOSシステムトレイ**: デーモンモード用のネイティブシステムトレイサポート（Claude Code/Cursorのみ）
 - **自動データ検出**: 複数の場所からClaude Codeのデータを自動検出
-- **Cursor API統合**: プレミアムリクエストの使用状況と料金情報を取得
+- **API統合**: 
+  - プレミアムリクエストの使用状況と料金情報のためのCursor API
+  - BedrockメトリクスのためのAWS CloudWatch
+  - Vertex AIメトリクスのためのGoogle Cloud Monitoring
 
 ```mermaid
 flowchart TD
     subgraph "データソース"
         CC[Claude Code<br/>ローカルディレクトリ]
         CA[Cursor API]
+        AWSCW[AWS CloudWatch<br/>Bedrockメトリクス]
+        GCPM[Google Cloud<br/>Vertex AIメトリクス]
     end
     
     subgraph "インフラストラクチャ層"
         JSONL[JSONLリポジトリ<br/>Claude Codeデータファイル読み取り]
         CAPI[Cursor APIリポジトリ<br/>使用量データ取得]
         CDB[Cursor DBリポジトリ<br/>SQLiteストレージ]
+        BR[Bedrockリポジトリ<br/>CloudWatch API]
+        VAR[Vertex AIリポジトリ<br/>Monitoring API]
     end
     
     subgraph "ユースケース層"
         CCS[Claude Codeサービス<br/>トークン使用量処理]
         CS[Cursorサービス<br/>APIデータ処理・トークン追跡]
+        BS[Bedrockサービス<br/>AWSメトリクス処理]
+        VAS[Vertex AIサービス<br/>GCPメトリクス処理]
         MS[メトリクスサービス<br/>メトリクス収集・集約]
     end
     
@@ -40,11 +49,17 @@ flowchart TD
     
     CC --> JSONL
     CA --> CAPI
+    AWSCW --> BR
+    GCPM --> VAR
     JSONL --> CCS
     CAPI --> CDB
     CDB --> CS
+    BR --> BS
+    VAR --> VAS
     CCS --> MS
     CS --> MS
+    BS --> MS
+    VAS --> MS
     MS --> PROM
 ```
 
@@ -58,7 +73,8 @@ flowchart TD
 - 1時間あたりの個人別トークン使用量
 - チーム全体のトークン使用傾向
 - 日別トークン合計
-- ツール別内訳（Claude Code vs Cursor）
+- ツール別内訳（Claude Code、Cursor、Bedrock、Vertex AI）
+- マルチクラウドAIサービスのコスト追跡
 
 ## インストール
 
@@ -138,11 +154,46 @@ $ cat ~/.config/tosage/config.json
       "username": "",
       "password": ""
     }
+  },
+  "bedrock": {
+    "enabled": false,
+    "regions": ["us-east-1", "us-west-2"],
+    "aws_profile": "",
+    "assume_role_arn": "",
+    "collection_interval_sec": 900
+  },
+  "vertex_ai": {
+    "enabled": false,
+    "project_id": "",
+    "locations": ["us-central1", "us-east1", "asia-northeast1"],
+    "service_account_key_path": "",
+    "collection_interval_sec": 900
   }
 }
 
 # 3. 再度実行
 ```
+
+### AWS Bedrock設定
+
+Bedrockメトリクスを有効にするには：
+1. `bedrock.enabled`を`true`に設定
+2. AWS認証情報を以下のいずれかで設定：
+   - `aws_profile`: ~/.aws/credentialsのAWSプロファイル名
+   - `assume_role_arn`: 引き受けるIAMロールARN
+   - デフォルトのAWS認証チェーン（環境変数、IAMロールなど）
+3. 監視するリージョンを`bedrock.regions`に指定
+
+### Google Vertex AI設定
+
+Vertex AIメトリクスを有効にするには：
+1. `vertex_ai.enabled`を`true`に設定
+2. `vertex_ai.project_id`にGCPプロジェクトIDを設定
+3. GCP認証情報を以下のいずれかで設定：
+   - `service_account_key_path`: サービスアカウントJSONキーファイルのパス
+   - 環境変数`GOOGLE_APPLICATION_CREDENTIALS`
+   - デフォルトのGCP認証チェーン（gcloud auth、メタデータサービスなど）
+4. 監視するロケーションを`vertex_ai.locations`に指定
 
 ## 使用方法
 
@@ -151,16 +202,27 @@ $ cat ~/.config/tosage/config.json
 今日のトークン数を出力:
 
 ```bash
+# Claude CodeとCursorのトークン（デフォルト）
 tosage
+
+# AWS Bedrockメトリクスのみ
+tosage --bedrock
+
+# Google Vertex AIメトリクスのみ
+tosage --vertex-ai
 ```
+
+**注意**: `--bedrock`または`--vertex-ai`フラグを使用する場合、Claude CodeとCursorのメトリクスはスキップされます。
 
 ### デーモンモード
 
-定期的にメトリクスを送信するシステムトレイアプリケーションとして実行:
+定期的にメトリクスを送信するシステムトレイアプリケーションとして実行（Claude Code/Cursorのみ）:
 
 ```bash
 tosage -d
 ```
+
+**注意**: デーモンモードは`--bedrock`または`--vertex-ai`フラグを使用している場合はサポートされません。
 
 ## ビルド
 
@@ -299,6 +361,8 @@ make dmg-notarized-all
 - **サービス**: ビジネスロジック実装
   - Claude Codeデータ処理
   - Cursor API統合とトークン追跡
+  - AWS Bedrock CloudWatchメトリクス処理
+  - Google Vertex AIモニタリングメトリクス処理
   - メトリクス収集と送信
   - アプリケーションステータス追跡
 
@@ -321,6 +385,18 @@ Cursor APIを使用して以下を取得:
 - プレミアム（GPT-4）リクエスト使用量
 - 使用量ベースの料金情報
 - チームメンバーシップステータス
+
+### AWS Bedrock
+CloudWatch APIを使用して以下を取得:
+- モデル別の入出力トークン数
+- 日次集計使用量
+- マルチリージョンサポート
+
+### Google Vertex AI
+Cloud Monitoring APIを使用して以下を取得:
+- モデルとロケーション別のトークン使用量
+- 日次集計メトリクス
+- マルチロケーションサポート
 
 
 ## 注意事項
@@ -375,8 +451,8 @@ Cursor APIを使用して以下を取得:
 
 ## TODO
 
-- [ ] Vertex AIトークン使用量追跡を追加
-- [ ] Amazon Bedrockトークン使用量追跡を追加
+- [x] Vertex AIトークン使用量追跡を追加
+- [x] Amazon Bedrockトークン使用量追跡を追加
 
 ## GitHub Actionsセットアップ
 

@@ -19,12 +19,12 @@ type VertexAIUsage struct {
 
 // VertexAIModelMetric represents usage metrics for a specific Vertex AI model
 type VertexAIModelMetric struct {
-	ModelID         string
-	InputTokens     int64
-	OutputTokens    int64
-	RequestCount    int64
-	Cost            float64
-	LatencyMs       float64
+	ModelID      string
+	InputTokens  int64
+	OutputTokens int64
+	RequestCount int64
+	Cost         float64
+	LatencyMs    float64
 }
 
 // NewVertexAIUsage creates a new VertexAIUsage instance
