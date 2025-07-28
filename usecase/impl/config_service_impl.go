@@ -36,10 +36,45 @@ func NewConfigService(configRepo repository.ConfigRepository, migrationService u
 	}, nil
 }
 
-// loadConfigWithJSON loads configuration from JSON file and environment variables
-func loadConfigWithJSON(configRepo repository.ConfigRepository, logger domain.Logger) (*config.AppConfig, error) {
-	// エラー耐性のある設定読み込みを使用
-	return loadConfigWithFallback(configRepo, logger)
+// loadConfigWithMigration loads configuration with migration support
+func loadConfigWithMigration(configRepo repository.ConfigRepository, migrationService usecase.ConfigMigrationService, logger domain.Logger) (*config.AppConfig, error) {
+	ctx := context.Background()
+
+	// まず通常の設定読み込みを実行
+	cfg, err := loadConfigWithFallback(configRepo, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// マイグレーションが必要かチェック
+	if migrationService.NeedsMigration(cfg) {
+		logger.Info(ctx, "Configuration migration required",
+			domain.NewField("current_version", cfg.Version),
+			domain.NewField("target_version", migrationService.GetCurrentVersion()))
+
+		// マイグレーションを実行
+		migratedCfg, err := migrationService.Migrate(cfg)
+		if err != nil {
+			logger.Error(ctx, "Configuration migration failed, using original configuration",
+				domain.NewField("error", err.Error()))
+			// マイグレーション失敗時は元の設定を使用（フォールバック）
+			return cfg, nil
+		}
+
+		// マイグレーション成功時は新しい設定を保存
+		if err := configRepo.Save(migratedCfg); err != nil {
+			logger.Error(ctx, "Failed to save migrated configuration",
+				domain.NewField("error", err.Error()))
+			// 保存失敗してもマイグレーション済み設定を使用
+		} else {
+			logger.Info(ctx, "Migrated configuration saved successfully",
+				domain.NewField("config_path", configRepo.GetConfigPath()))
+		}
+
+		return migratedCfg, nil
+	}
+
+	return cfg, nil
 }
 
 // loadConfigWithMigration loads configuration with migration support
