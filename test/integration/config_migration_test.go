@@ -90,7 +90,11 @@ func TestConfigMigration_EndToEnd(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to create temp dir: %v", err)
 			}
-			defer os.RemoveAll(tempDir)
+			defer func() {
+				if err := os.RemoveAll(tempDir); err != nil {
+					t.Logf("Failed to remove temp dir: %v", err)
+				}
+			}()
 
 			// Write initial config file
 			configPath := filepath.Join(tempDir, "config.json")
@@ -161,7 +165,11 @@ func TestConfigMigration_WithEnvironmentVariables(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	// Create legacy config file
 	configPath := filepath.Join(tempDir, "config.json")
@@ -181,11 +189,19 @@ func TestConfigMigration_WithEnvironmentVariables(t *testing.T) {
 	}
 
 	// Set environment variables that should override file values
-	os.Setenv("TOSAGE_PROMETHEUS_REMOTE_WRITE_USERNAME", "envuser")
-	os.Setenv("TOSAGE_PROMETHEUS_REMOTE_WRITE_PASSWORD", "envpass")
+	if err := os.Setenv("TOSAGE_PROMETHEUS_REMOTE_WRITE_USERNAME", "envuser"); err != nil {
+		t.Fatalf("Failed to set environment variable: %v", err)
+	}
+	if err := os.Setenv("TOSAGE_PROMETHEUS_REMOTE_WRITE_PASSWORD", "envpass"); err != nil {
+		t.Fatalf("Failed to set environment variable: %v", err)
+	}
 	defer func() {
-		os.Unsetenv("TOSAGE_PROMETHEUS_REMOTE_WRITE_USERNAME")
-		os.Unsetenv("TOSAGE_PROMETHEUS_REMOTE_WRITE_PASSWORD")
+		if err := os.Unsetenv("TOSAGE_PROMETHEUS_REMOTE_WRITE_USERNAME"); err != nil {
+			t.Logf("Failed to unset environment variable: %v", err)
+		}
+		if err := os.Unsetenv("TOSAGE_PROMETHEUS_REMOTE_WRITE_PASSWORD"); err != nil {
+			t.Logf("Failed to unset environment variable: %v", err)
+		}
 	}()
 
 	// Create custom config repository
@@ -242,7 +258,11 @@ func TestConfigMigration_InvalidConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			t.Logf("Failed to remove temp dir: %v", err)
+		}
+	}()
 
 	// Create invalid legacy config (RemoteWriteURL without credentials)
 	configPath := filepath.Join(tempDir, "config.json")

@@ -36,12 +36,6 @@ func NewConfigService(configRepo repository.ConfigRepository, migrationService u
 	}, nil
 }
 
-// loadConfigWithJSON loads configuration from JSON file and environment variables
-func loadConfigWithJSON(configRepo repository.ConfigRepository, logger domain.Logger) (*config.AppConfig, error) {
-	// エラー耐性のある設定読み込みを使用
-	return loadConfigWithFallback(configRepo, logger)
-}
-
 // loadConfigWithMigration loads configuration with migration support
 func loadConfigWithMigration(configRepo repository.ConfigRepository, migrationService usecase.ConfigMigrationService, logger domain.Logger) (*config.AppConfig, error) {
 	ctx := context.Background()
