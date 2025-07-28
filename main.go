@@ -10,6 +10,7 @@ import (
 
 	"github.com/ca-srg/tosage/domain"
 	"github.com/ca-srg/tosage/infrastructure/di"
+	"github.com/ca-srg/tosage/interface/cli"
 )
 
 func main() {
@@ -79,7 +80,13 @@ func handleShutdown(metricsService interface{ StopPeriodicMetrics() error }, log
 // runCLIMode runs the application in CLI mode
 func runCLIMode(container *di.Container) {
 	// Get services
-	cliController := container.GetCLIController()
+	cliControllerIface := container.GetCLIController()
+	cliController, ok := cliControllerIface.(*cli.CLIController)
+	if !ok || cliController == nil {
+		fmt.Fprintf(os.Stderr, "CLI controller not available\n")
+		os.Exit(1)
+	}
+	
 	metricsService := container.GetMetricsService()
 
 	// Get logger
@@ -109,13 +116,23 @@ func runDaemonMode(container *di.Container) {
 	logger := container.CreateLogger("main")
 	ctx := context.Background()
 
-	daemonController := container.GetDaemonController()
-	if daemonController == nil {
+	daemonControllerIface := container.GetDaemonController()
+	if daemonControllerIface == nil {
 		logger.Error(ctx, "Daemon mode is not available. Please check your configuration.")
 		os.Exit(1)
 	}
 
-	// Run the daemon controller on the main thread
-	// This is required for macOS GUI components
-	daemonController.Run()
+	// Try to cast to the expected type
+	type DaemonRunner interface {
+		Run()
+	}
+	
+	if runner, ok := daemonControllerIface.(DaemonRunner); ok {
+		// Run the daemon controller on the main thread
+		// This is required for macOS GUI components
+		runner.Run()
+	} else {
+		logger.Error(ctx, "Daemon controller does not support Run method")
+		os.Exit(1)
+	}
 }

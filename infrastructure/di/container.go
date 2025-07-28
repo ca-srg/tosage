@@ -11,7 +11,6 @@ import (
 	"github.com/ca-srg/tosage/infrastructure/logging"
 	infraRepo "github.com/ca-srg/tosage/infrastructure/repository"
 	"github.com/ca-srg/tosage/infrastructure/service"
-	"github.com/ca-srg/tosage/interface/controller"
 	"github.com/ca-srg/tosage/interface/presenter"
 	"github.com/ca-srg/tosage/usecase/impl"
 	usecase "github.com/ca-srg/tosage/usecase/interface"
@@ -30,16 +29,18 @@ type Container struct {
 	cursorTokenRepo repository.CursorTokenRepository
 	cursorAPIRepo   repository.CursorAPIRepository
 	bedrockRepo     repository.BedrockRepository
+	vertexAIRepo    repository.VertexAIRepository
 
 	// Services
 	timezoneService repository.TimezoneService
 
 	// Use Cases
-	ccService      usecase.CcService
-	metricsService usecase.MetricsService
-	cursorService  usecase.CursorService
-	bedrockService usecase.BedrockService
-	statusService  usecase.StatusService
+	ccService       usecase.CcService
+	metricsService  usecase.MetricsService
+	cursorService   usecase.CursorService
+	bedrockService  usecase.BedrockService
+	vertexAIService usecase.VertexAIService
+	statusService   usecase.StatusService
 	restartManager usecase.RestartManager
 
 	// Presenters
@@ -47,17 +48,19 @@ type Container struct {
 	jsonPresenter    presenter.JSONPresenter
 
 	// Controllers
-	cliController     *controller.CLIController
-	systrayController *controller.SystrayController
-	daemonController  *controller.DaemonController
+	cliController interface{}
+
+	// Platform-specific container
+	darwinContainer *DarwinContainer
 
 	// Logging
 	loggerFactory domain.LoggerFactory
 	logger        domain.Logger
 
 	// Options
-	debugMode      bool
-	bedrockEnabled bool
+	debugMode       bool
+	bedrockEnabled  bool
+	vertexAIEnabled bool
 }
 
 // ContainerOption is a function that configures the container
@@ -74,6 +77,13 @@ func WithDebugMode(debug bool) ContainerOption {
 func WithBedrockEnabled(enabled bool) ContainerOption {
 	return func(c *Container) {
 		c.bedrockEnabled = enabled
+	}
+}
+
+// WithVertexAIEnabled sets the Vertex AI enabled mode
+func WithVertexAIEnabled(enabled bool) ContainerOption {
+	return func(c *Container) {
+		c.vertexAIEnabled = enabled
 	}
 }
 
@@ -126,8 +136,8 @@ func NewContainer(opts ...ContainerOption) (*Container, error) {
 		return nil, fmt.Errorf("failed to initialize prometheus: %w", err)
 	}
 
-	// Initialize Daemon components if enabled
-	if err := container.initDaemon(); err != nil {
+	// Initialize Daemon components if enabled (platform-specific)
+	if err := container.initDaemonPlatform(); err != nil {
 		return nil, fmt.Errorf("failed to initialize daemon: %w", err)
 	}
 
@@ -205,6 +215,21 @@ func (c *Container) initConfig() error {
 		}
 	}
 
+	// Override Vertex AI enabled state if set via command line
+	if c.vertexAIEnabled {
+		if cfg.VertexAI == nil {
+			cfg.VertexAI = &config.VertexAIConfig{
+				Enabled:               true,
+				ProjectID:             "",
+				Locations:             []string{"us-central1", "us-east1"},
+				ServiceAccountKeyPath: "",
+				CollectionIntervalSec: 900,
+			}
+		} else {
+			cfg.VertexAI.Enabled = true
+		}
+	}
+
 	c.config = cfg
 	return nil
 }
@@ -265,6 +290,17 @@ func (c *Container) initRepositories() error {
 		}
 	}
 
+	// Initialize Vertex AI repository if enabled
+	if c.config.VertexAI != nil && c.config.VertexAI.Enabled {
+		vertexAIRepo, err := infraRepo.NewVertexAIMonitoringRepository(c.config.VertexAI.ProjectID, c.config.VertexAI.ServiceAccountKeyPath)
+		if err != nil {
+			// Log warning but don't fail initialization
+			c.logger.Warn(nil, "Failed to initialize Vertex AI repository", domain.NewField("error", err.Error()))
+		} else {
+			c.vertexAIRepo = vertexAIRepo
+		}
+	}
+
 	return nil
 }
 
@@ -299,6 +335,18 @@ func (c *Container) initUseCases() error {
 		c.bedrockService = impl.NewBedrockService(c.bedrockRepo, bedrockConfig)
 	}
 
+	// Initialize Vertex AI service if configured
+	if c.config.VertexAI != nil && c.vertexAIRepo != nil {
+		vertexAIConfig := &repository.VertexAIConfig{
+			Enabled:               c.config.VertexAI.Enabled,
+			ProjectID:             c.config.VertexAI.ProjectID,
+			Locations:             c.config.VertexAI.Locations,
+			ServiceAccountKeyPath: c.config.VertexAI.ServiceAccountKeyPath,
+			CollectionInterval:    time.Duration(c.config.VertexAI.CollectionIntervalSec) * time.Second,
+		}
+		c.vertexAIService = impl.NewVertexAIService(c.vertexAIRepo, vertexAIConfig)
+	}
+
 	// Initialize Restart manager
 	restartManager, err := impl.NewRestartManager()
 	if err != nil {
@@ -318,7 +366,7 @@ func (c *Container) initPresenters() error {
 
 // initControllers initializes controller implementations
 func (c *Container) initControllers() error {
-	c.cliController = controller.NewCLIController(
+	c.cliController = newCLIController(
 		c.ccService,
 		c.consolePresenter,
 		c.jsonPresenter,
@@ -350,6 +398,7 @@ func (c *Container) initPrometheus() error {
 		c.ccService,
 		c.cursorService,
 		c.bedrockService,
+		c.vertexAIService,
 		c.metricsRepo,
 		c.config.Prometheus,
 		c.CreateLogger("metrics"),
@@ -359,35 +408,6 @@ func (c *Container) initPrometheus() error {
 	return nil
 }
 
-// initDaemon initializes daemon components
-func (c *Container) initDaemon() error {
-	// Only initialize if daemon mode is configured
-	if c.config.Daemon == nil || !c.config.Daemon.Enabled {
-		return nil
-	}
-
-	// Initialize systray controller
-	c.systrayController = controller.NewSystrayController(
-		c.ccService,
-		c.statusService,
-		c.metricsService,
-		c.configService,
-		c.bedrockService,
-	)
-
-	// Initialize daemon controller
-	c.daemonController = controller.NewDaemonController(
-		c.config,
-		c.configService,
-		c.ccService,
-		c.statusService,
-		c.metricsService,
-		c.systrayController,
-		c.CreateLogger("daemon"),
-	)
-
-	return nil
-}
 
 // GetConfig returns the application configuration
 func (c *Container) GetConfig() *config.AppConfig {
@@ -415,7 +435,7 @@ func (c *Container) GetJSONPresenter() presenter.JSONPresenter {
 }
 
 // GetCLIController returns the CLI controller
-func (c *Container) GetCLIController() *controller.CLIController {
+func (c *Container) GetCLIController() interface{} {
 	return c.cliController
 }
 
@@ -454,20 +474,21 @@ func (c *Container) GetBedrockRepository() repository.BedrockRepository {
 	return c.bedrockRepo
 }
 
+// GetVertexAIService returns the Vertex AI service
+func (c *Container) GetVertexAIService() usecase.VertexAIService {
+	return c.vertexAIService
+}
+
+// GetVertexAIRepository returns the Vertex AI repository
+func (c *Container) GetVertexAIRepository() repository.VertexAIRepository {
+	return c.vertexAIRepo
+}
+
 // GetStatusService returns the status service
 func (c *Container) GetStatusService() usecase.StatusService {
 	return c.statusService
 }
 
-// GetSystrayController returns the systray controller
-func (c *Container) GetSystrayController() *controller.SystrayController {
-	return c.systrayController
-}
-
-// GetDaemonController returns the daemon controller
-func (c *Container) GetDaemonController() *controller.DaemonController {
-	return c.daemonController
-}
 
 // GetLoggerFactory returns the logger factory
 func (c *Container) GetLoggerFactory() domain.LoggerFactory {
@@ -646,14 +667,15 @@ func (b *ContainerBuilder) Build() (*Container, error) {
 		container.ccService,
 		container.cursorService,
 		container.bedrockService,
+		container.vertexAIService,
 		container.metricsRepo,
 		container.config.Prometheus,
 		container.CreateLogger("metrics"),
 		container.timezoneService,
 	)
 
-	// Initialize daemon components if configured
-	if err := container.initDaemon(); err != nil {
+	// Initialize daemon components if configured (platform-specific)
+	if err := container.initDaemonPlatform(); err != nil {
 		return nil, fmt.Errorf("failed to initialize daemon: %w", err)
 	}
 

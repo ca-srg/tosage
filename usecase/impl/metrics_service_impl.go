@@ -17,6 +17,7 @@ type MetricsServiceImpl struct {
 	ccService       usecase.CcService
 	cursorService   usecase.CursorService
 	bedrockService  usecase.BedrockService
+	vertexAIService usecase.VertexAIService
 	metricsRepo     repository.MetricsRepository
 	config          *config.PrometheusConfig
 	ticker          *time.Ticker
@@ -33,6 +34,7 @@ func NewMetricsServiceImpl(
 	ccService usecase.CcService,
 	cursorService usecase.CursorService,
 	bedrockService usecase.BedrockService,
+	vertexAIService usecase.VertexAIService,
 	metricsRepo repository.MetricsRepository,
 	config *config.PrometheusConfig,
 	logger domain.Logger,
@@ -42,6 +44,7 @@ func NewMetricsServiceImpl(
 		ccService:       ccService,
 		cursorService:   cursorService,
 		bedrockService:  bedrockService,
+		vertexAIService: vertexAIService,
 		metricsRepo:     metricsRepo,
 		config:          config,
 		stopChan:        make(chan struct{}),
@@ -253,6 +256,63 @@ func (s *MetricsServiceImpl) sendMetrics() error {
 						domain.NewField("output_tokens", bedrockUsage.OutputTokens()),
 						domain.NewField("total_tokens", bedrockUsage.TotalTokens()),
 						domain.NewField("total_cost", bedrockUsage.TotalCost()),
+						domain.NewField("period", "JST today"))
+				}
+			}
+		}
+	}
+
+	// Send Vertex AI metrics if VertexAIService is available and enabled
+	if s.vertexAIService != nil && s.vertexAIService.IsEnabled() {
+		// Get today's Vertex AI usage
+		jst, _ := time.LoadLocation("Asia/Tokyo")
+		today := time.Now().In(jst)
+		vertexAIUsage, err := s.vertexAIService.GetDailyUsage(today)
+		if err != nil {
+			// Log error but don't fail the entire metrics operation
+			s.logger.Warn(ctx, "Failed to get Vertex AI usage", domain.NewField("error", err.Error()))
+		} else if vertexAIUsage != nil && !vertexAIUsage.IsEmpty() {
+			// Send Vertex AI token metrics (separate input/output metrics)
+			if s.timezoneService != nil {
+				timezoneInfo := s.timezoneService.GetTimezoneInfo()
+
+				// Send input tokens
+				if err := s.metricsRepo.SendTokenMetricWithTimezone(int(vertexAIUsage.InputTokens()), s.config.HostLabel, "tosage_vertex_ai_input_token", timezoneInfo); err != nil {
+					s.logger.Warn(ctx, "Failed to send Vertex AI input token metrics", domain.NewField("error", err.Error()))
+				}
+
+				// Send output tokens
+				if err := s.metricsRepo.SendTokenMetricWithTimezone(int(vertexAIUsage.OutputTokens()), s.config.HostLabel, "tosage_vertex_ai_output_token", timezoneInfo); err != nil {
+					s.logger.Warn(ctx, "Failed to send Vertex AI output token metrics", domain.NewField("error", err.Error()))
+				}
+
+				// Send total tokens
+				if err := s.metricsRepo.SendTokenMetricWithTimezone(int(vertexAIUsage.TotalTokens()), s.config.HostLabel, "tosage_vertex_ai_total_token", timezoneInfo); err != nil {
+					s.logger.Warn(ctx, "Failed to send Vertex AI total token metrics", domain.NewField("error", err.Error()))
+				} else {
+					s.logger.Info(ctx, "Successfully sent Vertex AI metrics",
+						domain.NewField("input_tokens", vertexAIUsage.InputTokens()),
+						domain.NewField("output_tokens", vertexAIUsage.OutputTokens()),
+						domain.NewField("total_tokens", vertexAIUsage.TotalTokens()),
+						domain.NewField("total_cost", vertexAIUsage.TotalCost()),
+						domain.NewField("period", "JST today"))
+				}
+			} else {
+				// Fall back to sending without timezone information
+				if err := s.metricsRepo.SendTokenMetric(int(vertexAIUsage.InputTokens()), s.config.HostLabel, "tosage_vertex_ai_input_token"); err != nil {
+					s.logger.Warn(ctx, "Failed to send Vertex AI input token metrics", domain.NewField("error", err.Error()))
+				}
+				if err := s.metricsRepo.SendTokenMetric(int(vertexAIUsage.OutputTokens()), s.config.HostLabel, "tosage_vertex_ai_output_token"); err != nil {
+					s.logger.Warn(ctx, "Failed to send Vertex AI output token metrics", domain.NewField("error", err.Error()))
+				}
+				if err := s.metricsRepo.SendTokenMetric(int(vertexAIUsage.TotalTokens()), s.config.HostLabel, "tosage_vertex_ai_total_token"); err != nil {
+					s.logger.Warn(ctx, "Failed to send Vertex AI total token metrics", domain.NewField("error", err.Error()))
+				} else {
+					s.logger.Info(ctx, "Successfully sent Vertex AI metrics",
+						domain.NewField("input_tokens", vertexAIUsage.InputTokens()),
+						domain.NewField("output_tokens", vertexAIUsage.OutputTokens()),
+						domain.NewField("total_tokens", vertexAIUsage.TotalTokens()),
+						domain.NewField("total_cost", vertexAIUsage.TotalCost()),
 						domain.NewField("period", "JST today"))
 				}
 			}

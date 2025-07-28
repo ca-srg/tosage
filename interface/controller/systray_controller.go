@@ -19,12 +19,14 @@ type SystrayController struct {
 	metricsService usecase.MetricsService
 	configService  usecase.ConfigService
 	bedrockService usecase.BedrockService
+	vertexAIService usecase.VertexAIService
 
 	// Menu items
 	sendNowItem      *systray.MenuItem
 	settingsItem     *systray.MenuItem
 	startAtLoginItem *systray.MenuItem
 	bedrockItem      *systray.MenuItem
+	vertexAIItem     *systray.MenuItem
 	quitItem         *systray.MenuItem
 
 	// Channels for menu actions
@@ -32,6 +34,7 @@ type SystrayController struct {
 	settingsChan     chan struct{}
 	startAtLoginChan chan struct{}
 	bedrockChan      chan struct{}
+	vertexAIChan     chan struct{}
 	quitChan         chan struct{}
 
 	// Login item manager
@@ -45,6 +48,7 @@ func NewSystrayController(
 	metricsService usecase.MetricsService,
 	configService usecase.ConfigService,
 	bedrockService usecase.BedrockService,
+	vertexAIService usecase.VertexAIService,
 ) *SystrayController {
 	loginItemManager, _ := NewLoginItemManager()
 
@@ -54,10 +58,12 @@ func NewSystrayController(
 		metricsService:   metricsService,
 		configService:    configService,
 		bedrockService:   bedrockService,
+		vertexAIService:  vertexAIService,
 		sendNowChan:      make(chan struct{}),
 		settingsChan:     make(chan struct{}),
 		startAtLoginChan: make(chan struct{}),
 		bedrockChan:      make(chan struct{}),
+		vertexAIChan:     make(chan struct{}),
 		quitChan:         make(chan struct{}),
 		loginItemManager: loginItemManager,
 	}
@@ -78,6 +84,10 @@ func (s *SystrayController) OnReady() {
 	// Bedrock tracking checkbox
 	bedrockEnabled := s.bedrockService != nil && s.bedrockService.IsEnabled()
 	s.bedrockItem = systray.AddMenuItemCheckbox("Include Bedrock Metrics", "Include AWS Bedrock usage in metrics (requires AWS credentials)", bedrockEnabled)
+
+	// Vertex AI tracking checkbox
+	vertexAIEnabled := s.vertexAIService != nil && s.vertexAIService.IsEnabled()
+	s.vertexAIItem = systray.AddMenuItemCheckbox("Include Vertex AI Metrics", "Include Google Cloud Vertex AI usage in metrics (requires GCP credentials)", vertexAIEnabled)
 
 	// Set initial state for start at login
 	if s.loginItemManager != nil {
@@ -100,6 +110,7 @@ func (s *SystrayController) OnExit() {
 	close(s.settingsChan)
 	close(s.startAtLoginChan)
 	close(s.bedrockChan)
+	close(s.vertexAIChan)
 	close(s.quitChan)
 }
 
@@ -118,6 +129,9 @@ func (s *SystrayController) handleMenuClicks() {
 
 		case <-s.bedrockItem.ClickedCh:
 			s.handleBedrockToggle()
+
+		case <-s.vertexAIItem.ClickedCh:
+			s.handleVertexAIToggle()
 
 		case <-s.quitItem.ClickedCh:
 			s.quitChan <- struct{}{}
@@ -144,6 +158,11 @@ func (s *SystrayController) GetQuitChannel() <-chan struct{} {
 // GetBedrockChannel returns the channel that signals when Bedrock checkbox is toggled
 func (s *SystrayController) GetBedrockChannel() <-chan struct{} {
 	return s.bedrockChan
+}
+
+// GetVertexAIChannel returns the channel that signals when Vertex AI checkbox is toggled
+func (s *SystrayController) GetVertexAIChannel() <-chan struct{} {
+	return s.vertexAIChan
 }
 
 // UpdateStatus updates the status display in the menu
@@ -257,4 +276,40 @@ func (s *SystrayController) handleBedrockToggle() {
 
 	// Signal configuration change
 	s.bedrockChan <- struct{}{}
+}
+
+// handleVertexAIToggle handles toggling the Vertex AI tracking setting
+func (s *SystrayController) handleVertexAIToggle() {
+	if s.vertexAIService == nil {
+		s.ShowNotification("Error", "Vertex AI service not available")
+		return
+	}
+
+	// Check current state
+	currentState := s.vertexAIService.IsEnabled()
+	newState := !currentState
+
+	// Update configuration through config service
+	// This is a simplified implementation - in practice, you'd update the config file
+	if newState {
+		// Check GCP credentials before enabling
+		if err := s.vertexAIService.CheckConnection(); err != nil {
+			s.ShowNotification("Error", "GCP credentials not configured or Cloud Monitoring access denied")
+			// Revert checkbox state
+			if currentState {
+				s.vertexAIItem.Check()
+			} else {
+				s.vertexAIItem.Uncheck()
+			}
+			return
+		}
+		s.vertexAIItem.Check()
+		s.ShowNotification("Success", "Vertex AI metrics enabled")
+	} else {
+		s.vertexAIItem.Uncheck()
+		s.ShowNotification("Success", "Vertex AI metrics disabled")
+	}
+
+	// Signal configuration change
+	s.vertexAIChan <- struct{}{}
 }
