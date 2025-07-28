@@ -130,6 +130,12 @@ func (d *DaemonController) Stop() error {
 
 // Run starts the daemon main loop
 func (d *DaemonController) Run() {
+	// Apply Dock visibility setting before starting the system tray
+	if d.config.Daemon != nil && d.config.Daemon.HideFromDock {
+		HideFromDock()
+		d.logger.Info(d.ctx, "Application hidden from Dock")
+	}
+
 	// This method blocks until the daemon is stopped
 	if err := d.startInternal(); err != nil {
 		d.logger.Error(d.ctx, "Failed to start daemon", domain.NewField("error", err.Error()))

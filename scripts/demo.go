@@ -40,6 +40,9 @@ var (
 		"kimura", "hayashi", "shimizu", "yamazaki", "mori", "abe",
 	}
 	hostPatterns = []string{"%s-macbook", "%s-mac", "%s-%s", "%ss-mac"}
+	
+	// ローカルランダムジェネレータ
+	rng *rand.Rand
 )
 
 // Config はデモの設定を保持
@@ -74,7 +77,6 @@ func loadConfig() *Config {
 	return cfg
 }
 
-// generateHostname はランダムなホスト名を生成
 func generateHostname(rng *rand.Rand) string {
 	firstName := firstNames[rng.Intn(len(firstNames))]
 	lastName := lastNames[rng.Intn(len(lastNames))]
@@ -230,7 +232,9 @@ func sendMetric(ctx context.Context, cfg *Config, hostname, metricName string, v
 		return fmt.Errorf("failed to send request: %w", err)
 	}
 	defer func() {
-		_ = resp.Body.Close()
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("[WARN] failed to close response body: %v", err)
+		}
 	}()
 
 	// レスポンスを確認

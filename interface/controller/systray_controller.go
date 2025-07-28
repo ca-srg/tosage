@@ -27,6 +27,7 @@ type SystrayController struct {
 	startAtLoginItem *systray.MenuItem
 	bedrockItem      *systray.MenuItem
 	vertexAIItem     *systray.MenuItem
+	hideFromDockItem *systray.MenuItem
 	quitItem         *systray.MenuItem
 
 	// Channels for menu actions
@@ -35,6 +36,7 @@ type SystrayController struct {
 	startAtLoginChan chan struct{}
 	bedrockChan      chan struct{}
 	vertexAIChan     chan struct{}
+	hideFromDockChan chan struct{}
 	quitChan         chan struct{}
 
 	// Login item manager
@@ -64,6 +66,7 @@ func NewSystrayController(
 		startAtLoginChan: make(chan struct{}),
 		bedrockChan:      make(chan struct{}),
 		vertexAIChan:     make(chan struct{}),
+		hideFromDockChan: make(chan struct{}),
 		quitChan:         make(chan struct{}),
 		loginItemManager: loginItemManager,
 	}
@@ -80,6 +83,7 @@ func (s *SystrayController) OnReady() {
 	systray.AddSeparator()
 	s.settingsItem = systray.AddMenuItem("Settings...", "Open settings dialog")
 	s.startAtLoginItem = systray.AddMenuItemCheckbox("Start at Login", "Start tosage when you log in", false)
+	s.hideFromDockItem = systray.AddMenuItemCheckbox("Hide from Dock", "Hide tosage from the macOS Dock", false)
 
 	// Bedrock tracking checkbox
 	bedrockEnabled := s.bedrockService != nil && s.bedrockService.IsEnabled()
@@ -94,6 +98,12 @@ func (s *SystrayController) OnReady() {
 		if isLoginItem, _ := s.loginItemManager.IsLoginItem(); isLoginItem {
 			s.startAtLoginItem.Check()
 		}
+	}
+
+	// Set initial state for hide from dock
+	config := s.configService.GetConfig()
+	if config.Daemon != nil && config.Daemon.HideFromDock {
+		s.hideFromDockItem.Check()
 	}
 
 	systray.AddSeparator()
@@ -111,6 +121,7 @@ func (s *SystrayController) OnExit() {
 	close(s.startAtLoginChan)
 	close(s.bedrockChan)
 	close(s.vertexAIChan)
+	close(s.hideFromDockChan)
 	close(s.quitChan)
 }
 
@@ -132,6 +143,9 @@ func (s *SystrayController) handleMenuClicks() {
 
 		case <-s.vertexAIItem.ClickedCh:
 			s.handleVertexAIToggle()
+
+		case <-s.hideFromDockItem.ClickedCh:
+			s.handleHideFromDockToggle()
 
 		case <-s.quitItem.ClickedCh:
 			s.quitChan <- struct{}{}
@@ -312,4 +326,53 @@ func (s *SystrayController) handleVertexAIToggle() {
 
 	// Signal configuration change
 	s.vertexAIChan <- struct{}{}
+
+// handleHideFromDockToggle handles toggling the hide from dock setting
+func (s *SystrayController) handleHideFromDockToggle() {
+	// Get current configuration
+	config := s.configService.GetConfig()
+	if config.Daemon == nil {
+		s.ShowNotification("Error", "Daemon configuration not available")
+		return
+	}
+
+	// Toggle the state
+	newState := !config.Daemon.HideFromDock
+
+	// Apply the change immediately
+	if newState {
+		HideFromDock()
+		s.hideFromDockItem.Check()
+	} else {
+		ShowInDock()
+		s.hideFromDockItem.Uncheck()
+	}
+
+	// Update configuration
+	config.Daemon.HideFromDock = newState
+	if err := s.configService.UpdateConfig(config); err != nil {
+		s.ShowNotification("Error", fmt.Sprintf("Failed to update configuration: %v", err))
+		// Revert the UI and dock state
+		if newState {
+			ShowInDock()
+			s.hideFromDockItem.Uncheck()
+		} else {
+			HideFromDock()
+			s.hideFromDockItem.Check()
+		}
+		return
+	}
+
+	// Save configuration
+	if err := s.configService.SaveConfig(); err != nil {
+		s.ShowNotification("Error", fmt.Sprintf("Failed to save configuration: %v", err))
+		return
+	}
+
+	// Show success notification
+	if newState {
+		s.ShowNotification("Success", "Application hidden from Dock")
+	} else {
+		s.ShowNotification("Success", "Application shown in Dock")
+	}
 }

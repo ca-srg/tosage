@@ -77,16 +77,19 @@ type VertexAIConfig struct {
 // DaemonConfig holds daemon mode configuration
 type DaemonConfig struct {
 	// Enabled indicates whether daemon mode is enabled
-	Enabled bool `json:"enabled,omitempty" env:"TOSAGE_DAEMON_ENABLED,default=false"`
+	Enabled bool `json:"enabled,omitempty" env:"TOSAGE_DAEMON_ENABLED"`
 
 	// StartAtLogin indicates whether to start at system login
-	StartAtLogin bool `json:"start_at_login,omitempty" env:"TOSAGE_DAEMON_START_AT_LOGIN,default=false"`
+	StartAtLogin bool `json:"start_at_login,omitempty" env:"TOSAGE_DAEMON_START_AT_LOGIN"`
+
+	// HideFromDock indicates whether to hide the app from the Dock (macOS only)
+	HideFromDock bool `json:"hide_from_dock,omitempty" env:"TOSAGE_DAEMON_HIDE_FROM_DOCK,default=true"`
 
 	// LogPath is the path for daemon log files
-	LogPath string `json:"log_path,omitempty" env:"TOSAGE_DAEMON_LOG_PATH,default=/tmp/tosage.log"`
+	LogPath string `json:"log_path,omitempty" env:"TOSAGE_DAEMON_LOG_PATH"`
 
 	// PidFile is the path for the daemon PID file
-	PidFile string `json:"pid_file,omitempty" env:"TOSAGE_DAEMON_PID_FILE,default=/tmp/tosage.pid"`
+	PidFile string `json:"pid_file,omitempty" env:"TOSAGE_DAEMON_PID_FILE"`
 }
 
 // PromtailConfig holds Promtail logging configuration
@@ -193,6 +196,7 @@ func DefaultConfig() *AppConfig {
 		Daemon: &DaemonConfig{
 			Enabled:      false,
 			StartAtLogin: false,
+			HideFromDock: false,
 			LogPath:      "/tmp/tosage.log",
 			PidFile:      "/tmp/tosage.pid",
 		},
@@ -291,6 +295,7 @@ func (c *AppConfig) LoadFromEnv() error {
 		original.Daemon = &DaemonConfig{
 			Enabled:      c.Daemon.Enabled,
 			StartAtLogin: c.Daemon.StartAtLogin,
+			HideFromDock: c.Daemon.HideFromDock,
 			LogPath:      c.Daemon.LogPath,
 			PidFile:      c.Daemon.PidFile,
 		}
@@ -480,6 +485,9 @@ func (c *AppConfig) trackDaemonEnvOverrides(original *DaemonConfig) {
 	}
 	if c.Daemon.StartAtLogin != original.StartAtLogin && os.Getenv("TOSAGE_DAEMON_START_AT_LOGIN") != "" {
 		c.ConfigSources["Daemon.StartAtLogin"] = SourceEnvironment
+	}
+	if c.Daemon.HideFromDock != original.HideFromDock && os.Getenv("TOSAGE_DAEMON_HIDE_FROM_DOCK") != "" {
+		c.ConfigSources["Daemon.HideFromDock"] = SourceEnvironment
 	}
 	if c.Daemon.LogPath != original.LogPath && os.Getenv("TOSAGE_DAEMON_LOG_PATH") != "" {
 		c.ConfigSources["Daemon.LogPath"] = SourceEnvironment
@@ -752,6 +760,7 @@ func (c *AppConfig) MarkDefaults() {
 	c.ConfigSources["VertexAI.CollectionIntervalSec"] = SourceDefault
 	c.ConfigSources["Daemon.Enabled"] = SourceDefault
 	c.ConfigSources["Daemon.StartAtLogin"] = SourceDefault
+	c.ConfigSources["Daemon.HideFromDock"] = SourceDefault
 	c.ConfigSources["Daemon.LogPath"] = SourceDefault
 	c.ConfigSources["Daemon.PidFile"] = SourceDefault
 	c.ConfigSources["Logging.Level"] = SourceDefault
@@ -873,6 +882,9 @@ func (c *AppConfig) mergeDaemonConfig(jsonConfig *DaemonConfig) {
 
 	c.Daemon.StartAtLogin = jsonConfig.StartAtLogin
 	c.ConfigSources["Daemon.StartAtLogin"] = SourceJSONFile
+
+	c.Daemon.HideFromDock = jsonConfig.HideFromDock
+	c.ConfigSources["Daemon.HideFromDock"] = SourceJSONFile
 
 	if jsonConfig.LogPath != "" {
 		c.Daemon.LogPath = jsonConfig.LogPath
