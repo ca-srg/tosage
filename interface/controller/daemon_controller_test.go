@@ -448,6 +448,10 @@ func (m *MockConfigService) LoadConfigWithFallback() (*config.AppConfig, error) 
 	return m.GetConfig(), nil
 }
 
+func (m *MockConfigService) LoadConfigWithMigration() (*config.AppConfig, error) {
+	return m.GetConfig(), nil
+}
+
 // Helper function to check if running on Darwin
 func isDarwin() bool {
 	// This would normally check runtime.GOOS == "darwin"

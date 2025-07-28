@@ -3,15 +3,34 @@ package config
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/Netflix/go-env"
 )
 
 // PrometheusConfig holds Prometheus integration configuration
 type PrometheusConfig struct {
+	// Remote Write configuration
 	// RemoteWriteURL is the Prometheus Remote Write endpoint URL
 	RemoteWriteURL string `json:"remote_write_url" env:"TOSAGE_PROMETHEUS_REMOTE_WRITE_URL"`
 
+	// RemoteWriteUsername is the username for Remote Write authentication
+	RemoteWriteUsername string `json:"remote_write_username" env:"TOSAGE_PROMETHEUS_REMOTE_WRITE_USERNAME"`
+
+	// RemoteWritePassword is the password for Remote Write authentication
+	RemoteWritePassword string `json:"remote_write_password" env:"TOSAGE_PROMETHEUS_REMOTE_WRITE_PASSWORD"`
+
+	// Query configuration (new fields)
+	// URL is the Prometheus query endpoint URL
+	URL string `json:"url" env:"TOSAGE_PROMETHEUS_URL"`
+
+	// Username is the username for query authentication
+	Username string `json:"username" env:"TOSAGE_PROMETHEUS_USERNAME"`
+
+	// Password is the password for query authentication
+	Password string `json:"password" env:"TOSAGE_PROMETHEUS_PASSWORD"`
+
+	// Common configuration
 	// HostLabel is the host label value for metrics
 	HostLabel string `json:"host_label,omitempty" env:"TOSAGE_PROMETHEUS_HOST_LABEL"`
 
@@ -20,10 +39,6 @@ type PrometheusConfig struct {
 
 	// TimeoutSec is the timeout in seconds for metric pushes
 	TimeoutSec int `json:"timeout_seconds,omitempty" env:"TOSAGE_PROMETHEUS_TIMEOUT_SECONDS,default=30"`
-
-	// Basic authentication (required when RemoteWriteURL is set)
-	Username string `json:"username" env:"TOSAGE_PROMETHEUS_USERNAME"`
-	Password string `json:"password" env:"TOSAGE_PROMETHEUS_PASSWORD"`
 }
 
 // CursorConfig holds Cursor integration configuration
@@ -125,6 +140,24 @@ type LoggingConfig struct {
 	Promtail *PromtailConfig `json:"promtail,omitempty"`
 }
 
+// CSVExportConfig holds CSV export configuration
+type CSVExportConfig struct {
+	// DefaultOutputPath is the default output directory for CSV files
+	DefaultOutputPath string `json:"default_output_path,omitempty" env:"TOSAGE_CSV_EXPORT_DEFAULT_OUTPUT_PATH,default=."`
+
+	// DefaultStartDays is the default number of days to look back for data
+	DefaultStartDays int `json:"default_start_days,omitempty" env:"TOSAGE_CSV_EXPORT_DEFAULT_START_DAYS,default=30"`
+
+	// DefaultMetricTypes is the default comma-separated list of metric types to export
+	DefaultMetricTypes string `json:"default_metric_types,omitempty" env:"TOSAGE_CSV_EXPORT_DEFAULT_METRIC_TYPES,default=claude_code,cursor,bedrock,vertex_ai"`
+
+	// MaxExportDays is the maximum number of days allowed for export range
+	MaxExportDays int `json:"max_export_days,omitempty" env:"TOSAGE_CSV_EXPORT_MAX_EXPORT_DAYS,default=365"`
+
+	// TimeZone is the timezone to use for CSV export (IANA timezone)
+	TimeZone string `json:"timezone,omitempty" env:"TOSAGE_CSV_EXPORT_TIMEZONE,default=Asia/Tokyo"`
+}
+
 // ConfigSource represents the source of a configuration value
 type ConfigSource string
 
@@ -139,6 +172,9 @@ type ConfigSourceMap map[string]ConfigSource
 
 // AppConfig holds application configuration
 type AppConfig struct {
+	// Version is the configuration schema version
+	Version int `json:"version,omitempty"`
+
 	// ClaudePath is the custom path to Claude data directory
 	ClaudePath string `json:"claude_path,omitempty" env:"TOSAGE_CLAUDE_PATH"`
 
@@ -160,6 +196,9 @@ type AppConfig struct {
 	// Logging holds logging configuration
 	Logging *LoggingConfig `json:"logging,omitempty"`
 
+	// CSVExport holds CSV export configuration
+	CSVExport *CSVExportConfig `json:"csv_export,omitempty"`
+
 	// ConfigSources tracks the source of each configuration field
 	ConfigSources ConfigSourceMap `json:"-"`
 }
@@ -167,12 +206,18 @@ type AppConfig struct {
 // DefaultConfig returns the default configuration
 func DefaultConfig() *AppConfig {
 	return &AppConfig{
+		Version:    1, // Current configuration version
 		ClaudePath: "",
 		Prometheus: &PrometheusConfig{
-			RemoteWriteURL: "http://localhost:9090/api/v1/write", // デフォルトのPrometheus URL
-			HostLabel:      "",
-			IntervalSec:    600, // 10 minutes
-			TimeoutSec:     30,
+			RemoteWriteURL:      "http://localhost:9090/api/v1/write", // デフォルトのPrometheus URL
+			RemoteWriteUsername: "",
+			RemoteWritePassword: "",
+			URL:                 "",
+			Username:            "",
+			Password:            "",
+			HostLabel:           "",
+			IntervalSec:         600, // 10 minutes
+			TimeoutSec:          30,
 		},
 		Cursor: &CursorConfig{
 			DatabasePath: "",
@@ -210,6 +255,13 @@ func DefaultConfig() *AppConfig {
 				TimeoutSeconds:   5,
 			},
 		},
+		CSVExport: &CSVExportConfig{
+			DefaultOutputPath:  ".",
+			DefaultStartDays:   30,
+			DefaultMetricTypes: "claude_code,cursor,bedrock,vertex_ai",
+			MaxExportDays:      365,
+			TimeZone:           "Asia/Tokyo",
+		},
 		ConfigSources: make(ConfigSourceMap),
 	}
 }
@@ -217,10 +269,14 @@ func DefaultConfig() *AppConfig {
 // MinimalDefaultConfig returns the minimal configuration template for initial setup
 func MinimalDefaultConfig() *AppConfig {
 	return &AppConfig{
+		Version: 1, // Current configuration version
 		Prometheus: &PrometheusConfig{
-			RemoteWriteURL: "",
-			Username:       "",
-			Password:       "",
+			RemoteWriteURL:      "",
+			RemoteWriteUsername: "",
+			RemoteWritePassword: "",
+			URL:                 "",
+			Username:            "",
+			Password:            "",
 		},
 		Logging: &LoggingConfig{
 			Promtail: &PromtailConfig{
@@ -228,6 +284,13 @@ func MinimalDefaultConfig() *AppConfig {
 				Username: "",
 				Password: "",
 			},
+		},
+		CSVExport: &CSVExportConfig{
+			DefaultOutputPath:  ".",
+			DefaultStartDays:   30,
+			DefaultMetricTypes: "claude_code,cursor",
+			MaxExportDays:      365,
+			TimeZone:           "Asia/Tokyo",
 		},
 		ConfigSources: make(ConfigSourceMap),
 	}
@@ -258,12 +321,15 @@ func (c *AppConfig) LoadFromEnv() error {
 	}
 	if c.Prometheus != nil {
 		original.Prometheus = &PrometheusConfig{
-			RemoteWriteURL: c.Prometheus.RemoteWriteURL,
-			HostLabel:      c.Prometheus.HostLabel,
-			IntervalSec:    c.Prometheus.IntervalSec,
-			TimeoutSec:     c.Prometheus.TimeoutSec,
-			Username:       c.Prometheus.Username,
-			Password:       c.Prometheus.Password,
+			RemoteWriteURL:      c.Prometheus.RemoteWriteURL,
+			RemoteWriteUsername: c.Prometheus.RemoteWriteUsername,
+			RemoteWritePassword: c.Prometheus.RemoteWritePassword,
+			URL:                 c.Prometheus.URL,
+			Username:            c.Prometheus.Username,
+			Password:            c.Prometheus.Password,
+			HostLabel:           c.Prometheus.HostLabel,
+			IntervalSec:         c.Prometheus.IntervalSec,
+			TimeoutSec:          c.Prometheus.TimeoutSec,
 		}
 	}
 	if c.Cursor != nil {
@@ -314,6 +380,15 @@ func (c *AppConfig) LoadFromEnv() error {
 				BatchCapacity:    c.Logging.Promtail.BatchCapacity,
 				TimeoutSeconds:   c.Logging.Promtail.TimeoutSeconds,
 			}
+		}
+	}
+	if c.CSVExport != nil {
+		original.CSVExport = &CSVExportConfig{
+			DefaultOutputPath:  c.CSVExport.DefaultOutputPath,
+			DefaultStartDays:   c.CSVExport.DefaultStartDays,
+			DefaultMetricTypes: c.CSVExport.DefaultMetricTypes,
+			MaxExportDays:      c.CSVExport.MaxExportDays,
+			TimeZone:           c.CSVExport.TimeZone,
 		}
 	}
 
@@ -393,6 +468,15 @@ func (c *AppConfig) LoadFromEnv() error {
 		}
 	}
 
+	// Special handling for CSVExport nested struct
+	if c.CSVExport != nil {
+		_, err = env.UnmarshalFromEnviron(c.CSVExport)
+		if err != nil {
+			return fmt.Errorf("failed to unmarshal CSVExport environment variables: %w", err)
+		}
+		c.trackCSVExportEnvOverrides(original.CSVExport)
+	}
+
 	return nil
 }
 
@@ -404,6 +488,21 @@ func (c *AppConfig) trackPrometheusEnvOverrides(original *PrometheusConfig) {
 	if c.Prometheus.RemoteWriteURL != original.RemoteWriteURL && os.Getenv("TOSAGE_PROMETHEUS_REMOTE_WRITE_URL") != "" {
 		c.ConfigSources["Prometheus.RemoteWriteURL"] = SourceEnvironment
 	}
+	if c.Prometheus.RemoteWriteUsername != original.RemoteWriteUsername && os.Getenv("TOSAGE_PROMETHEUS_REMOTE_WRITE_USERNAME") != "" {
+		c.ConfigSources["Prometheus.RemoteWriteUsername"] = SourceEnvironment
+	}
+	if c.Prometheus.RemoteWritePassword != original.RemoteWritePassword && os.Getenv("TOSAGE_PROMETHEUS_REMOTE_WRITE_PASSWORD") != "" {
+		c.ConfigSources["Prometheus.RemoteWritePassword"] = SourceEnvironment
+	}
+	if c.Prometheus.URL != original.URL && os.Getenv("TOSAGE_PROMETHEUS_URL") != "" {
+		c.ConfigSources["Prometheus.URL"] = SourceEnvironment
+	}
+	if c.Prometheus.Username != original.Username && os.Getenv("TOSAGE_PROMETHEUS_USERNAME") != "" {
+		c.ConfigSources["Prometheus.Username"] = SourceEnvironment
+	}
+	if c.Prometheus.Password != original.Password && os.Getenv("TOSAGE_PROMETHEUS_PASSWORD") != "" {
+		c.ConfigSources["Prometheus.Password"] = SourceEnvironment
+	}
 	if c.Prometheus.HostLabel != original.HostLabel && os.Getenv("TOSAGE_PROMETHEUS_HOST_LABEL") != "" {
 		c.ConfigSources["Prometheus.HostLabel"] = SourceEnvironment
 	}
@@ -412,12 +511,6 @@ func (c *AppConfig) trackPrometheusEnvOverrides(original *PrometheusConfig) {
 	}
 	if c.Prometheus.TimeoutSec != original.TimeoutSec && os.Getenv("TOSAGE_PROMETHEUS_TIMEOUT_SECONDS") != "" {
 		c.ConfigSources["Prometheus.TimeoutSec"] = SourceEnvironment
-	}
-	if c.Prometheus.Username != original.Username && os.Getenv("TOSAGE_PROMETHEUS_USERNAME") != "" {
-		c.ConfigSources["Prometheus.Username"] = SourceEnvironment
-	}
-	if c.Prometheus.Password != original.Password && os.Getenv("TOSAGE_PROMETHEUS_PASSWORD") != "" {
-		c.ConfigSources["Prometheus.Password"] = SourceEnvironment
 	}
 }
 
@@ -535,6 +628,28 @@ func (c *AppConfig) trackPromtailEnvOverrides(original *PromtailConfig) {
 	}
 }
 
+// trackCSVExportEnvOverrides tracks environment variable overrides for CSVExport config
+func (c *AppConfig) trackCSVExportEnvOverrides(original *CSVExportConfig) {
+	if original == nil {
+		return
+	}
+	if c.CSVExport.DefaultOutputPath != original.DefaultOutputPath && os.Getenv("TOSAGE_CSV_EXPORT_DEFAULT_OUTPUT_PATH") != "" {
+		c.ConfigSources["CSVExport.DefaultOutputPath"] = SourceEnvironment
+	}
+	if c.CSVExport.DefaultStartDays != original.DefaultStartDays && os.Getenv("TOSAGE_CSV_EXPORT_DEFAULT_START_DAYS") != "" {
+		c.ConfigSources["CSVExport.DefaultStartDays"] = SourceEnvironment
+	}
+	if c.CSVExport.DefaultMetricTypes != original.DefaultMetricTypes && os.Getenv("TOSAGE_CSV_EXPORT_DEFAULT_METRIC_TYPES") != "" {
+		c.ConfigSources["CSVExport.DefaultMetricTypes"] = SourceEnvironment
+	}
+	if c.CSVExport.MaxExportDays != original.MaxExportDays && os.Getenv("TOSAGE_CSV_EXPORT_MAX_EXPORT_DAYS") != "" {
+		c.ConfigSources["CSVExport.MaxExportDays"] = SourceEnvironment
+	}
+	if c.CSVExport.TimeZone != original.TimeZone && os.Getenv("TOSAGE_CSV_EXPORT_TIMEZONE") != "" {
+		c.ConfigSources["CSVExport.TimeZone"] = SourceEnvironment
+	}
+}
+
 // Validate validates the configuration
 func (c *AppConfig) Validate() error {
 	// Validate Prometheus configuration
@@ -579,6 +694,13 @@ func (c *AppConfig) Validate() error {
 		}
 	}
 
+	// Validate CSVExport configuration
+	if c.CSVExport != nil {
+		if err := c.validateCSVExport(); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -607,9 +729,17 @@ func (c *AppConfig) validatePrometheus() error {
 		return fmt.Errorf("prometheus timeout must be less than interval")
 	}
 
-	// Validate basic authentication is provided
-	if c.Prometheus.Username == "" || c.Prometheus.Password == "" {
-		return fmt.Errorf("basic auth username and password are required when remote write URL is set")
+	// Validate basic authentication is provided for remote write
+	if c.Prometheus.RemoteWriteUsername == "" || c.Prometheus.RemoteWritePassword == "" {
+		return fmt.Errorf("remote write username and password are required when remote write URL is set")
+	}
+
+	// Validate query configuration if URL is provided
+	if c.Prometheus.URL != "" {
+		// Validate basic authentication is provided for query
+		if c.Prometheus.Username == "" || c.Prometheus.Password == "" {
+			return fmt.Errorf("query username and password are required when query URL is set")
+		}
 	}
 
 	return nil
@@ -738,15 +868,50 @@ func (c *AppConfig) validateLogging() error {
 	return nil
 }
 
+// validateCSVExport validates CSVExport configuration
+func (c *AppConfig) validateCSVExport() error {
+	if c.CSVExport == nil {
+		return nil
+	}
+
+	// Validate default start days is reasonable
+	if c.CSVExport.DefaultStartDays < 0 {
+		return fmt.Errorf("csv export default start days cannot be negative")
+	}
+
+	// Validate max export days is reasonable
+	if c.CSVExport.MaxExportDays < 1 {
+		return fmt.Errorf("csv export max export days must be at least 1")
+	}
+
+	// Validate that default start days doesn't exceed max export days
+	if c.CSVExport.DefaultStartDays > c.CSVExport.MaxExportDays {
+		return fmt.Errorf("csv export default start days cannot exceed max export days")
+	}
+
+	// Validate timezone format
+	if c.CSVExport.TimeZone != "" {
+		if _, err := time.LoadLocation(c.CSVExport.TimeZone); err != nil {
+			return fmt.Errorf("csv export timezone is invalid: %w", err)
+		}
+	}
+
+	return nil
+}
+
 // MarkDefaults marks all configuration fields as coming from defaults
 func (c *AppConfig) MarkDefaults() {
+	c.ConfigSources["Version"] = SourceDefault
 	c.ConfigSources["ClaudePath"] = SourceDefault
 	c.ConfigSources["Prometheus.RemoteWriteURL"] = SourceDefault
+	c.ConfigSources["Prometheus.RemoteWriteUsername"] = SourceDefault
+	c.ConfigSources["Prometheus.RemoteWritePassword"] = SourceDefault
+	c.ConfigSources["Prometheus.URL"] = SourceDefault
+	c.ConfigSources["Prometheus.Username"] = SourceDefault
+	c.ConfigSources["Prometheus.Password"] = SourceDefault
 	c.ConfigSources["Prometheus.HostLabel"] = SourceDefault
 	c.ConfigSources["Prometheus.IntervalSec"] = SourceDefault
 	c.ConfigSources["Prometheus.TimeoutSec"] = SourceDefault
-	c.ConfigSources["Prometheus.Username"] = SourceDefault
-	c.ConfigSources["Prometheus.Password"] = SourceDefault
 	c.ConfigSources["Cursor.DatabasePath"] = SourceDefault
 	c.ConfigSources["Cursor.APITimeout"] = SourceDefault
 	c.ConfigSources["Cursor.CacheTimeout"] = SourceDefault
@@ -771,11 +936,19 @@ func (c *AppConfig) MarkDefaults() {
 	c.ConfigSources["Promtail.BatchWaitSeconds"] = SourceDefault
 	c.ConfigSources["Promtail.BatchCapacity"] = SourceDefault
 	c.ConfigSources["Promtail.TimeoutSeconds"] = SourceDefault
+	c.ConfigSources["CSVExport.DefaultOutputPath"] = SourceDefault
+	c.ConfigSources["CSVExport.DefaultStartDays"] = SourceDefault
+	c.ConfigSources["CSVExport.DefaultMetricTypes"] = SourceDefault
+	c.ConfigSources["CSVExport.MaxExportDays"] = SourceDefault
+	c.ConfigSources["CSVExport.TimeZone"] = SourceDefault
 }
 
 // MergeJSONConfig merges JSON configuration into the current configuration
 func (c *AppConfig) MergeJSONConfig(jsonConfig *AppConfig) {
 	// Merge top-level fields
+	// Always merge version from JSON, even if it's 0 (legacy config)
+	c.Version = jsonConfig.Version
+	c.ConfigSources["Version"] = SourceJSONFile
 	if jsonConfig.ClaudePath != "" {
 		c.ClaudePath = jsonConfig.ClaudePath
 		c.ConfigSources["ClaudePath"] = SourceJSONFile
@@ -828,6 +1001,14 @@ func (c *AppConfig) MergeJSONConfig(jsonConfig *AppConfig) {
 		}
 		c.mergeLoggingConfig(jsonConfig.Logging)
 	}
+
+	// Merge CSVExport configuration
+	if jsonConfig.CSVExport != nil {
+		if c.CSVExport == nil {
+			c.CSVExport = &CSVExportConfig{}
+		}
+		c.mergeCSVExportConfig(jsonConfig.CSVExport)
+	}
 }
 
 // mergePrometheusConfig merges Prometheus configuration from JSON
@@ -835,6 +1016,26 @@ func (c *AppConfig) mergePrometheusConfig(jsonConfig *PrometheusConfig) {
 	if jsonConfig.RemoteWriteURL != "" {
 		c.Prometheus.RemoteWriteURL = jsonConfig.RemoteWriteURL
 		c.ConfigSources["Prometheus.RemoteWriteURL"] = SourceJSONFile
+	}
+	if jsonConfig.RemoteWriteUsername != "" {
+		c.Prometheus.RemoteWriteUsername = jsonConfig.RemoteWriteUsername
+		c.ConfigSources["Prometheus.RemoteWriteUsername"] = SourceJSONFile
+	}
+	if jsonConfig.RemoteWritePassword != "" {
+		c.Prometheus.RemoteWritePassword = jsonConfig.RemoteWritePassword
+		c.ConfigSources["Prometheus.RemoteWritePassword"] = SourceJSONFile
+	}
+	if jsonConfig.URL != "" {
+		c.Prometheus.URL = jsonConfig.URL
+		c.ConfigSources["Prometheus.URL"] = SourceJSONFile
+	}
+	if jsonConfig.Username != "" {
+		c.Prometheus.Username = jsonConfig.Username
+		c.ConfigSources["Prometheus.Username"] = SourceJSONFile
+	}
+	if jsonConfig.Password != "" {
+		c.Prometheus.Password = jsonConfig.Password
+		c.ConfigSources["Prometheus.Password"] = SourceJSONFile
 	}
 	if jsonConfig.HostLabel != "" {
 		c.Prometheus.HostLabel = jsonConfig.HostLabel
@@ -847,14 +1048,6 @@ func (c *AppConfig) mergePrometheusConfig(jsonConfig *PrometheusConfig) {
 	if jsonConfig.TimeoutSec != 0 {
 		c.Prometheus.TimeoutSec = jsonConfig.TimeoutSec
 		c.ConfigSources["Prometheus.TimeoutSec"] = SourceJSONFile
-	}
-	if jsonConfig.Username != "" {
-		c.Prometheus.Username = jsonConfig.Username
-		c.ConfigSources["Prometheus.Username"] = SourceJSONFile
-	}
-	if jsonConfig.Password != "" {
-		c.Prometheus.Password = jsonConfig.Password
-		c.ConfigSources["Prometheus.Password"] = SourceJSONFile
 	}
 }
 
@@ -989,5 +1182,29 @@ func (c *AppConfig) mergeVertexAIConfig(jsonConfig *VertexAIConfig) {
 	if len(jsonConfig.Locations) > 0 {
 		c.VertexAI.Locations = jsonConfig.Locations
 		c.ConfigSources["VertexAI.Locations"] = SourceJSONFile
+	}
+}
+
+// mergeCSVExportConfig merges CSVExport configuration from JSON
+func (c *AppConfig) mergeCSVExportConfig(jsonConfig *CSVExportConfig) {
+	if jsonConfig.DefaultOutputPath != "" {
+		c.CSVExport.DefaultOutputPath = jsonConfig.DefaultOutputPath
+		c.ConfigSources["CSVExport.DefaultOutputPath"] = SourceJSONFile
+	}
+	if jsonConfig.DefaultStartDays != 0 {
+		c.CSVExport.DefaultStartDays = jsonConfig.DefaultStartDays
+		c.ConfigSources["CSVExport.DefaultStartDays"] = SourceJSONFile
+	}
+	if jsonConfig.DefaultMetricTypes != "" {
+		c.CSVExport.DefaultMetricTypes = jsonConfig.DefaultMetricTypes
+		c.ConfigSources["CSVExport.DefaultMetricTypes"] = SourceJSONFile
+	}
+	if jsonConfig.MaxExportDays != 0 {
+		c.CSVExport.MaxExportDays = jsonConfig.MaxExportDays
+		c.ConfigSources["CSVExport.MaxExportDays"] = SourceJSONFile
+	}
+	if jsonConfig.TimeZone != "" {
+		c.CSVExport.TimeZone = jsonConfig.TimeZone
+		c.ConfigSources["CSVExport.TimeZone"] = SourceJSONFile
 	}
 }

@@ -21,9 +21,6 @@ type ConfigRepository interface {
 	// EnsureConfigDir は設定ディレクトリが存在することを保証する
 	EnsureConfigDir() error
 
-	// Backup は現在の設定ファイルのバックアップを作成する
-	Backup() error
-
 	// Validate は設定内容の妥当性を検証する
 	Validate(config *config.AppConfig) error
 }

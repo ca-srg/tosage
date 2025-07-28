@@ -1,0 +1,54 @@
+# Git files
+.git
+.gitignore
+
+# GitHub files
+.github/
+
+# Build artifacts
+build/
+tosage
+# Keep pre-built binaries for container
+# tosage-*
+*.exe
+
+# DMG creation files
+scripts/
+*.dmg
+
+# Test files
+*_test.go
+test/
+test.sh
+test_export.csv
+
+# Documentation
+*.md
+LICENSE
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Go cache
+go.sum.backup
+vendor/
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# macOS specific
+assets/*.png
+assets/*.go
+
+# CI/CD
+.github/
+Makefile
+
+# Development files
+.kiro/

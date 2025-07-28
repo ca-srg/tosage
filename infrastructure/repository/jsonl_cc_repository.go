@@ -199,7 +199,7 @@ func (r *JSONLCcRepository) loadJSONLFile(filePath, projectPath, sessionID strin
 
 	var entries []*entity.CcEntry
 	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024) // Handle large lines
+	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024) // Handle large lines up to 10MB
 
 	lineNum := 0
 	for scanner.Scan() {

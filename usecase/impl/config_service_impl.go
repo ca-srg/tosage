@@ -13,31 +13,68 @@ import (
 
 // ConfigServiceImpl は ConfigService の実装
 type ConfigServiceImpl struct {
-	configRepo repository.ConfigRepository
-	config     *config.AppConfig
-	logger     domain.Logger
-	mu         sync.RWMutex
+	configRepo       repository.ConfigRepository
+	migrationService usecase.ConfigMigrationService
+	config           *config.AppConfig
+	logger           domain.Logger
+	mu               sync.RWMutex
 }
 
 // NewConfigService は新しい ConfigService を作成する
-func NewConfigService(configRepo repository.ConfigRepository, logger domain.Logger) (usecase.ConfigService, error) {
-	// 設定を読み込む（ロガーを渡す）
-	cfg, err := loadConfigWithJSON(configRepo, logger)
+func NewConfigService(configRepo repository.ConfigRepository, migrationService usecase.ConfigMigrationService, logger domain.Logger) (usecase.ConfigService, error) {
+	// 設定を読み込む（ロガーとマイグレーションサービスを渡す）
+	cfg, err := loadConfigWithMigration(configRepo, migrationService, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
 	return &ConfigServiceImpl{
-		configRepo: configRepo,
-		config:     cfg,
-		logger:     logger,
+		configRepo:       configRepo,
+		migrationService: migrationService,
+		config:           cfg,
+		logger:           logger,
 	}, nil
 }
 
-// loadConfigWithJSON loads configuration from JSON file and environment variables
-func loadConfigWithJSON(configRepo repository.ConfigRepository, logger domain.Logger) (*config.AppConfig, error) {
-	// エラー耐性のある設定読み込みを使用
-	return loadConfigWithFallback(configRepo, logger)
+// loadConfigWithMigration loads configuration with migration support
+func loadConfigWithMigration(configRepo repository.ConfigRepository, migrationService usecase.ConfigMigrationService, logger domain.Logger) (*config.AppConfig, error) {
+	ctx := context.Background()
+
+	// まず通常の設定読み込みを実行
+	cfg, err := loadConfigWithFallback(configRepo, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// マイグレーションが必要かチェック
+	if migrationService.NeedsMigration(cfg) {
+		logger.Info(ctx, "Configuration migration required",
+			domain.NewField("current_version", cfg.Version),
+			domain.NewField("target_version", migrationService.GetCurrentVersion()))
+
+		// マイグレーションを実行
+		migratedCfg, err := migrationService.Migrate(cfg)
+		if err != nil {
+			logger.Error(ctx, "Configuration migration failed, using original configuration",
+				domain.NewField("error", err.Error()))
+			// マイグレーション失敗時は元の設定を使用（フォールバック）
+			return cfg, nil
+		}
+
+		// マイグレーション成功時は新しい設定を保存
+		if err := configRepo.Save(migratedCfg); err != nil {
+			logger.Error(ctx, "Failed to save migrated configuration",
+				domain.NewField("error", err.Error()))
+			// 保存失敗してもマイグレーション済み設定を使用
+		} else {
+			logger.Info(ctx, "Migrated configuration saved successfully",
+				domain.NewField("config_path", configRepo.GetConfigPath()))
+		}
+
+		return migratedCfg, nil
+	}
+
+	return cfg, nil
 }
 
 // loadConfigWithFallback loads configuration with fallback to defaults on errors
@@ -144,8 +181,8 @@ func (s *ConfigServiceImpl) ReloadConfig() error {
 
 	s.logger.Info(ctx, "Reloading configuration")
 
-	// 設定を再読み込み
-	newConfig, err := loadConfigWithJSON(s.configRepo, s.logger)
+	// 設定を再読み込み（マイグレーション対応）
+	newConfig, err := loadConfigWithMigration(s.configRepo, s.migrationService, s.logger)
 	if err != nil {
 		s.logger.Error(ctx, "Failed to reload configuration",
 			domain.NewField("error", err.Error()))
@@ -208,6 +245,14 @@ func (s *ConfigServiceImpl) ExportConfig() map[string]interface{} {
 		prometheusMap["host_label"] = s.config.Prometheus.HostLabel
 		prometheusMap["interval_seconds"] = s.config.Prometheus.IntervalSec
 		prometheusMap["timeout_seconds"] = s.config.Prometheus.TimeoutSec
+		// Remote Write認証情報
+		prometheusMap["remote_write_username"] = s.config.Prometheus.RemoteWriteUsername
+		// パスワードはマスク
+		if s.config.Prometheus.RemoteWritePassword != "" {
+			prometheusMap["remote_write_password"] = "****"
+		}
+		// Query認証情報
+		prometheusMap["url"] = s.config.Prometheus.URL
 		prometheusMap["username"] = s.config.Prometheus.Username
 		// パスワードはマスク
 		if s.config.Prometheus.Password != "" {
@@ -344,4 +389,10 @@ func (s *ConfigServiceImpl) CreateTemplateConfig() error {
 func (s *ConfigServiceImpl) LoadConfigWithFallback() (*config.AppConfig, error) {
 	// エラー耐性のある設定読み込みを使用
 	return loadConfigWithFallback(s.configRepo, s.logger)
+}
+
+// LoadConfigWithMigration はマイグレーション対応の設定読み込みを行う
+func (s *ConfigServiceImpl) LoadConfigWithMigration() (*config.AppConfig, error) {
+	// マイグレーション対応の設定読み込みを使用
+	return loadConfigWithMigration(s.configRepo, s.migrationService, s.logger)
 }

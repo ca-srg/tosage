@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/ca-srg/tosage/interface/presenter"
@@ -14,6 +15,8 @@ type CLIController struct {
 	consolePresenter presenter.ConsolePresenter
 	jsonPresenter    presenter.JSONPresenter
 	skipCCMetrics    bool
+	bedrockService   usecase.BedrockService
+	vertexAIService  usecase.VertexAIService
 }
 
 // NewCLIController creates a new CLI controller
@@ -34,10 +37,49 @@ func (c *CLIController) SetSkipCCMetrics(skip bool) {
 	c.skipCCMetrics = skip
 }
 
+// SetBedrockService sets the Bedrock service
+func (c *CLIController) SetBedrockService(service usecase.BedrockService) {
+	c.bedrockService = service
+}
+
+// SetVertexAIService sets the Vertex AI service
+func (c *CLIController) SetVertexAIService(service usecase.VertexAIService) {
+	c.vertexAIService = service
+}
+
 // Run executes the CLI controller - always shows today's tokens in JST
 func (c *CLIController) Run() error {
-	// If skip CC metrics is enabled or ccService is nil, just return without doing anything
-	if c.skipCCMetrics || c.ccService == nil {
+	// If skip CC metrics is enabled, try to show Bedrock/Vertex AI metrics instead
+	if c.skipCCMetrics {
+		// Try to get and display Bedrock metrics
+		if c.bedrockService != nil && c.bedrockService.IsEnabled() {
+			jst, _ := time.LoadLocation("Asia/Tokyo")
+			today := time.Now().In(jst)
+			usage, err := c.bedrockService.GetDailyUsage(today)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: Failed to get Bedrock usage: %v\n", err)
+			} else if usage != nil {
+				fmt.Printf("Bedrock tokens today: %d\n", usage.TotalTokens())
+			}
+		}
+
+		// Try to get and display Vertex AI metrics
+		if c.vertexAIService != nil && c.vertexAIService.IsEnabled() {
+			jst, _ := time.LoadLocation("Asia/Tokyo")
+			today := time.Now().In(jst)
+			usage, err := c.vertexAIService.GetDailyUsage(today)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: Failed to get Vertex AI usage: %v\n", err)
+			} else if usage != nil {
+				fmt.Printf("Vertex AI tokens today: %d\n", usage.TotalTokens())
+			}
+		}
+
+		return nil
+	}
+
+	// Original CC metrics logic
+	if c.ccService == nil {
 		return nil
 	}
 
