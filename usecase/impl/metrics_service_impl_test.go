@@ -201,7 +201,7 @@ func TestNewMetricsServiceImpl(t *testing.T) {
 	}
 
 	timezoneService := &MockTimezoneService{Location: time.UTC}
-	service := NewMetricsServiceImpl(ccService, nil, metricsRepo, config, &mockLogger{}, timezoneService)
+	service := NewMetricsServiceImpl(ccService, nil, nil, nil, metricsRepo, config, &mockLogger{}, timezoneService)
 	if service == nil {
 		t.Error("NewMetricsServiceImpl returned nil")
 	}
@@ -233,7 +233,7 @@ func TestMetricsServiceImpl_StartPeriodicMetrics(t *testing.T) {
 			ccService := &mockCcService{}
 			metricsRepo := &mockMetricsRepository{}
 			timezoneService := &MockTimezoneService{Location: time.UTC}
-			service := NewMetricsServiceImpl(ccService, nil, metricsRepo, tt.config, &mockLogger{}, timezoneService)
+			service := NewMetricsServiceImpl(ccService, nil, nil, nil, metricsRepo, tt.config, &mockLogger{}, timezoneService)
 
 			err := service.StartPeriodicMetrics()
 			if (err != nil) != tt.wantErr {
@@ -265,7 +265,7 @@ func TestMetricsServiceImpl_StopPeriodicMetrics(t *testing.T) {
 	}
 
 	timezoneService := &MockTimezoneService{Location: time.UTC}
-	service := NewMetricsServiceImpl(ccService, nil, metricsRepo, config, &mockLogger{}, timezoneService)
+	service := NewMetricsServiceImpl(ccService, nil, nil, nil, metricsRepo, config, &mockLogger{}, timezoneService)
 
 	// Start the service
 	err := service.StartPeriodicMetrics()
@@ -350,7 +350,7 @@ func TestMetricsServiceImpl_SendCurrentMetrics(t *testing.T) {
 			}
 
 			timezoneService := &MockTimezoneService{Location: time.UTC}
-			service := NewMetricsServiceImpl(ccService, nil, metricsRepo, config, &mockLogger{}, timezoneService)
+			service := NewMetricsServiceImpl(ccService, nil, nil, nil, metricsRepo, config, &mockLogger{}, timezoneService)
 
 			err := service.SendCurrentMetrics()
 			if (err != nil) != tt.wantErr {
@@ -369,7 +369,7 @@ func TestMetricsServiceImpl_PeriodicExecution(t *testing.T) {
 	}
 
 	timezoneService := &MockTimezoneService{Location: time.UTC}
-	service := NewMetricsServiceImpl(ccService, nil, metricsRepo, config, &mockLogger{}, timezoneService)
+	service := NewMetricsServiceImpl(ccService, nil, nil, nil, metricsRepo, config, &mockLogger{}, timezoneService)
 
 	// Start periodic metrics
 	err := service.StartPeriodicMetrics()
@@ -417,7 +417,7 @@ func TestMetricsServiceImpl_ErrorHandling(t *testing.T) {
 	}
 
 	timezoneService := &MockTimezoneService{Location: time.UTC}
-	service := NewMetricsServiceImpl(ccService, nil, metricsRepo, config, &mockLogger{}, timezoneService)
+	service := NewMetricsServiceImpl(ccService, nil, nil, nil, metricsRepo, config, &mockLogger{}, timezoneService)
 
 	// Start periodic metrics
 	err := service.StartPeriodicMetrics()
@@ -446,7 +446,7 @@ func TestMetricsServiceImpl_ConcurrentStartStop(t *testing.T) {
 	}
 
 	timezoneService := &MockTimezoneService{Location: time.UTC}
-	service := NewMetricsServiceImpl(ccService, nil, metricsRepo, config, &mockLogger{}, timezoneService)
+	service := NewMetricsServiceImpl(ccService, nil, nil, nil, metricsRepo, config, &mockLogger{}, timezoneService)
 
 	// Try starting multiple times concurrently
 	var wg sync.WaitGroup
@@ -560,9 +560,9 @@ func TestMetricsServiceImpl_CursorMetrics(t *testing.T) {
 			var service usecase.MetricsService
 			timezoneService := &MockTimezoneService{Location: time.UTC}
 			if tt.cursorService != nil {
-				service = NewMetricsServiceImpl(ccService, tt.cursorService, metricsRepo, config, &mockLogger{}, timezoneService)
+				service = NewMetricsServiceImpl(ccService, tt.cursorService, nil, nil, metricsRepo, config, &mockLogger{}, timezoneService)
 			} else {
-				service = NewMetricsServiceImpl(ccService, nil, metricsRepo, config, &mockLogger{}, timezoneService)
+				service = NewMetricsServiceImpl(ccService, nil, nil, nil, metricsRepo, config, &mockLogger{}, timezoneService)
 			}
 
 			// Send metrics
@@ -634,7 +634,7 @@ func TestMetricsServiceImpl_CursorMetrics_Values(t *testing.T) {
 			}
 
 			timezoneService := &MockTimezoneService{Location: time.UTC}
-			service := NewMetricsServiceImpl(ccService, cursorService, metricsRepo, config, &mockLogger{}, timezoneService)
+			service := NewMetricsServiceImpl(ccService, cursorService, nil, nil, metricsRepo, config, &mockLogger{}, timezoneService)
 
 			// Send metrics
 			_ = service.SendCurrentMetrics()
@@ -709,7 +709,7 @@ func TestMetricsServiceImpl_GracefulDegradation(t *testing.T) {
 			}
 
 			timezoneService := &MockTimezoneService{Location: time.UTC}
-			service := NewMetricsServiceImpl(tt.ccService, tt.cursorService, metricsRepo, config, &mockLogger{}, timezoneService)
+			service := NewMetricsServiceImpl(tt.ccService, tt.cursorService, nil, nil, metricsRepo, config, &mockLogger{}, timezoneService)
 
 			// Send metrics
 			err := service.SendCurrentMetrics()

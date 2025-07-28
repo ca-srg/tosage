@@ -74,11 +74,10 @@ func loadConfig() *Config {
 	return cfg
 }
 
-// generateHostname はランダムなホスト名を生成
-func generateHostname() string {
-	firstName := firstNames[rand.Intn(len(firstNames))]
-	lastName := lastNames[rand.Intn(len(lastNames))]
-	pattern := hostPatterns[rand.Intn(len(hostPatterns))]
+func generateHostname(rng *rand.Rand) string {
+	firstName := firstNames[rng.Intn(len(firstNames))]
+	lastName := lastNames[rng.Intn(len(lastNames))]
+	pattern := hostPatterns[rng.Intn(len(hostPatterns))]
 
 	switch pattern {
 	case "%s-%s":
@@ -91,10 +90,10 @@ func generateHostname() string {
 }
 
 // generateTokenCount はランダムなトークン数を生成（累積的に増加）
-func generateTokenCount(hostID, iteration int) int {
-	baseTokens := 1000 + (hostID * 100) + rand.Intn(500)
-	timeIncrease := iteration * (10000 + rand.Intn(40001))
-	randomVariation := rand.Intn(200)
+func generateTokenCount(hostID, iteration int, rng *rand.Rand) int {
+	baseTokens := 1000 + (hostID * 100) + rng.Intn(500)
+	timeIncrease := iteration * (10000 + rng.Intn(40001))
+	randomVariation := rng.Intn(200)
 
 	total := baseTokens + timeIncrease + randomVariation
 
@@ -229,7 +228,11 @@ func sendMetric(ctx context.Context, cfg *Config, hostname, metricName string, v
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("[WARN] failed to close response body: %v", err)
+		}
+	}()
 
 	// レスポンスを確認
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
@@ -240,7 +243,7 @@ func sendMetric(ctx context.Context, cfg *Config, hostname, metricName string, v
 }
 
 // sendMetricsBatch は1バッチ分のメトリクスを送信
-func sendMetricsBatch(ctx context.Context, cfg *Config, hostnames []string, iteration int) {
+func sendMetricsBatch(ctx context.Context, cfg *Config, hostnames []string, iteration int, rng *rand.Rand) {
 	timestamp := time.Now().UnixMilli()
 	log.Printf("[INFO] バッチ %d: メトリクス送信開始 (%s)", iteration, time.Now().Format(time.RFC3339))
 
@@ -260,8 +263,8 @@ func sendMetricsBatch(ctx context.Context, cfg *Config, hostnames []string, iter
 			defer func() { <-sem }()
 
 			hostname := hostnames[hostID-1]
-			ccTokens := float64(generateTokenCount(hostID, iteration))
-			cursorTokens := float64(generateTokenCount(hostID+1000, iteration))
+			ccTokens := float64(generateTokenCount(hostID, iteration, rng))
+			cursorTokens := float64(generateTokenCount(hostID+1000, iteration, rng))
 
 			// Claude Codeトークンを送信
 			if err := sendMetric(ctx, cfg, hostname, "tosage_cc_token", ccTokens, timestamp); err != nil {
@@ -319,13 +322,13 @@ func main() {
 		cancel()
 	}()
 
-	// 乱数シードを初期化
-	rand.Seed(time.Now().UnixNano())
+	// 乱数生成器を初期化
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	// ホスト名を事前に生成
 	hostnames := make([]string, cfg.NumHosts)
 	for i := 0; i < cfg.NumHosts; i++ {
-		hostnames[i] = generateHostname()
+		hostnames[i] = generateHostname(rng)
 	}
 	log.Printf("[INFO] %d台分のホスト名を生成しました", cfg.NumHosts)
 
@@ -337,7 +340,7 @@ func main() {
 	defer ticker.Stop()
 
 	// 最初のバッチをすぐに送信
-	sendMetricsBatch(ctx, cfg, hostnames, iteration)
+	sendMetricsBatch(ctx, cfg, hostnames, iteration, rng)
 	iteration++
 
 	// 定期的にメトリクスを送信
@@ -346,7 +349,7 @@ func main() {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			sendMetricsBatch(ctx, cfg, hostnames, iteration)
+			sendMetricsBatch(ctx, cfg, hostnames, iteration, rng)
 			iteration++
 			log.Printf("[INFO] 次の送信まで %v 待機中...", cfg.Interval)
 		}

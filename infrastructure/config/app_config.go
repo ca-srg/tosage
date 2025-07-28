@@ -38,19 +38,58 @@ type CursorConfig struct {
 	CacheTimeout int `json:"cache_timeout,omitempty" env:"TOSAGE_CURSOR_CACHE_TIMEOUT,default=300"`
 }
 
+// BedrockConfig holds AWS Bedrock integration configuration
+type BedrockConfig struct {
+	// Enabled indicates if Bedrock tracking is enabled
+	Enabled bool `json:"enabled,omitempty" env:"TOSAGE_BEDROCK_ENABLED,default=false"`
+
+	// Regions is the list of AWS regions to monitor
+	Regions []string `json:"regions,omitempty" env:"TOSAGE_BEDROCK_REGIONS"`
+
+	// AWSProfile is the AWS profile to use (optional)
+	AWSProfile string `json:"aws_profile,omitempty" env:"TOSAGE_BEDROCK_AWS_PROFILE,default="`
+
+	// AssumeRoleARN is the ARN of the role to assume (optional)
+	AssumeRoleARN string `json:"assume_role_arn,omitempty" env:"TOSAGE_BEDROCK_ASSUME_ROLE_ARN,default="`
+
+	// CollectionIntervalSec is how often to collect metrics in seconds
+	CollectionIntervalSec int `json:"collection_interval_seconds,omitempty" env:"TOSAGE_BEDROCK_COLLECTION_INTERVAL_SECONDS,default=900"`
+}
+
+// VertexAIConfig holds Google Cloud Vertex AI integration configuration
+type VertexAIConfig struct {
+	// Enabled indicates if Vertex AI tracking is enabled
+	Enabled bool `json:"enabled,omitempty" env:"TOSAGE_VERTEX_AI_ENABLED,default=false"`
+
+	// ProjectID is the Google Cloud Project ID
+	ProjectID string `json:"project_id,omitempty" env:"TOSAGE_VERTEX_AI_PROJECT_ID,default="`
+
+	// Locations is the list of Google Cloud locations to monitor
+	Locations []string `json:"locations,omitempty" env:"TOSAGE_VERTEX_AI_LOCATIONS"`
+
+	// ServiceAccountKeyPath is the path to the service account key file (optional)
+	ServiceAccountKeyPath string `json:"service_account_key_path,omitempty" env:"TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY_PATH,default="`
+
+	// CollectionIntervalSec is how often to collect metrics in seconds
+	CollectionIntervalSec int `json:"collection_interval_seconds,omitempty" env:"TOSAGE_VERTEX_AI_COLLECTION_INTERVAL_SECONDS,default=900"`
+}
+
 // DaemonConfig holds daemon mode configuration
 type DaemonConfig struct {
 	// Enabled indicates whether daemon mode is enabled
-	Enabled bool `json:"enabled,omitempty" env:"TOSAGE_DAEMON_ENABLED,default=false"`
+	Enabled bool `json:"enabled,omitempty" env:"TOSAGE_DAEMON_ENABLED"`
 
 	// StartAtLogin indicates whether to start at system login
-	StartAtLogin bool `json:"start_at_login,omitempty" env:"TOSAGE_DAEMON_START_AT_LOGIN,default=false"`
+	StartAtLogin bool `json:"start_at_login,omitempty" env:"TOSAGE_DAEMON_START_AT_LOGIN"`
+
+	// HideFromDock indicates whether to hide the app from the Dock (macOS only)
+	HideFromDock bool `json:"hide_from_dock,omitempty" env:"TOSAGE_DAEMON_HIDE_FROM_DOCK,default=true"`
 
 	// LogPath is the path for daemon log files
-	LogPath string `json:"log_path,omitempty" env:"TOSAGE_DAEMON_LOG_PATH,default=/tmp/tosage.log"`
+	LogPath string `json:"log_path,omitempty" env:"TOSAGE_DAEMON_LOG_PATH"`
 
 	// PidFile is the path for the daemon PID file
-	PidFile string `json:"pid_file,omitempty" env:"TOSAGE_DAEMON_PID_FILE,default=/tmp/tosage.pid"`
+	PidFile string `json:"pid_file,omitempty" env:"TOSAGE_DAEMON_PID_FILE"`
 }
 
 // PromtailConfig holds Promtail logging configuration
@@ -109,6 +148,12 @@ type AppConfig struct {
 	// Cursor holds Cursor integration configuration
 	Cursor *CursorConfig `json:"cursor,omitempty"`
 
+	// Bedrock holds AWS Bedrock integration configuration
+	Bedrock *BedrockConfig `json:"bedrock,omitempty"`
+
+	// VertexAI holds Google Cloud Vertex AI integration configuration
+	VertexAI *VertexAIConfig `json:"vertex_ai,omitempty"`
+
 	// Daemon holds daemon mode configuration
 	Daemon *DaemonConfig `json:"daemon,omitempty"`
 
@@ -134,9 +179,24 @@ func DefaultConfig() *AppConfig {
 			APITimeout:   30,  // 30 seconds
 			CacheTimeout: 300, // 5 minutes
 		},
+		Bedrock: &BedrockConfig{
+			Enabled:               false, // Disabled by default for security
+			Regions:               []string{"us-east-1", "us-west-2"},
+			AWSProfile:            "",
+			AssumeRoleARN:         "",
+			CollectionIntervalSec: 900, // 15 minutes
+		},
+		VertexAI: &VertexAIConfig{
+			Enabled:               false, // Disabled by default for security
+			ProjectID:             "",
+			Locations:             []string{"us-central1", "us-east1"},
+			ServiceAccountKeyPath: "",
+			CollectionIntervalSec: 900, // 15 minutes
+		},
 		Daemon: &DaemonConfig{
 			Enabled:      false,
 			StartAtLogin: false,
+			HideFromDock: false,
 			LogPath:      "/tmp/tosage.log",
 			PidFile:      "/tmp/tosage.pid",
 		},
@@ -213,10 +273,29 @@ func (c *AppConfig) LoadFromEnv() error {
 			CacheTimeout: c.Cursor.CacheTimeout,
 		}
 	}
+	if c.Bedrock != nil {
+		original.Bedrock = &BedrockConfig{
+			Enabled:               c.Bedrock.Enabled,
+			Regions:               c.Bedrock.Regions,
+			AWSProfile:            c.Bedrock.AWSProfile,
+			AssumeRoleARN:         c.Bedrock.AssumeRoleARN,
+			CollectionIntervalSec: c.Bedrock.CollectionIntervalSec,
+		}
+	}
+	if c.VertexAI != nil {
+		original.VertexAI = &VertexAIConfig{
+			Enabled:               c.VertexAI.Enabled,
+			ProjectID:             c.VertexAI.ProjectID,
+			Locations:             c.VertexAI.Locations,
+			ServiceAccountKeyPath: c.VertexAI.ServiceAccountKeyPath,
+			CollectionIntervalSec: c.VertexAI.CollectionIntervalSec,
+		}
+	}
 	if c.Daemon != nil {
 		original.Daemon = &DaemonConfig{
 			Enabled:      c.Daemon.Enabled,
 			StartAtLogin: c.Daemon.StartAtLogin,
+			HideFromDock: c.Daemon.HideFromDock,
 			LogPath:      c.Daemon.LogPath,
 			PidFile:      c.Daemon.PidFile,
 		}
@@ -265,6 +344,24 @@ func (c *AppConfig) LoadFromEnv() error {
 			return fmt.Errorf("failed to unmarshal Cursor environment variables: %w", err)
 		}
 		c.trackCursorEnvOverrides(original.Cursor)
+	}
+
+	// Special handling for Bedrock nested struct
+	if c.Bedrock != nil {
+		_, err = env.UnmarshalFromEnviron(c.Bedrock)
+		if err != nil {
+			return fmt.Errorf("failed to unmarshal Bedrock environment variables: %w", err)
+		}
+		c.trackBedrockEnvOverrides(original.Bedrock)
+	}
+
+	// Special handling for VertexAI nested struct
+	if c.VertexAI != nil {
+		_, err = env.UnmarshalFromEnviron(c.VertexAI)
+		if err != nil {
+			return fmt.Errorf("failed to unmarshal VertexAI environment variables: %w", err)
+		}
+		c.trackVertexAIEnvOverrides(original.VertexAI)
 	}
 
 	// Special handling for Daemon nested struct
@@ -340,6 +437,44 @@ func (c *AppConfig) trackCursorEnvOverrides(original *CursorConfig) {
 	}
 }
 
+// trackBedrockEnvOverrides tracks environment variable overrides for Bedrock config
+func (c *AppConfig) trackBedrockEnvOverrides(original *BedrockConfig) {
+	if original == nil {
+		return
+	}
+	if c.Bedrock.Enabled != original.Enabled && os.Getenv("TOSAGE_BEDROCK_ENABLED") != "" {
+		c.ConfigSources["Bedrock.Enabled"] = SourceEnvironment
+	}
+	if c.Bedrock.AWSProfile != original.AWSProfile && os.Getenv("TOSAGE_BEDROCK_AWS_PROFILE") != "" {
+		c.ConfigSources["Bedrock.AWSProfile"] = SourceEnvironment
+	}
+	if c.Bedrock.AssumeRoleARN != original.AssumeRoleARN && os.Getenv("TOSAGE_BEDROCK_ASSUME_ROLE_ARN") != "" {
+		c.ConfigSources["Bedrock.AssumeRoleARN"] = SourceEnvironment
+	}
+	if c.Bedrock.CollectionIntervalSec != original.CollectionIntervalSec && os.Getenv("TOSAGE_BEDROCK_COLLECTION_INTERVAL_SECONDS") != "" {
+		c.ConfigSources["Bedrock.CollectionIntervalSec"] = SourceEnvironment
+	}
+}
+
+// trackVertexAIEnvOverrides tracks environment variable overrides for VertexAI config
+func (c *AppConfig) trackVertexAIEnvOverrides(original *VertexAIConfig) {
+	if original == nil {
+		return
+	}
+	if c.VertexAI.Enabled != original.Enabled && os.Getenv("TOSAGE_VERTEX_AI_ENABLED") != "" {
+		c.ConfigSources["VertexAI.Enabled"] = SourceEnvironment
+	}
+	if c.VertexAI.ProjectID != original.ProjectID && os.Getenv("TOSAGE_VERTEX_AI_PROJECT_ID") != "" {
+		c.ConfigSources["VertexAI.ProjectID"] = SourceEnvironment
+	}
+	if c.VertexAI.ServiceAccountKeyPath != original.ServiceAccountKeyPath && os.Getenv("TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY_PATH") != "" {
+		c.ConfigSources["VertexAI.ServiceAccountKeyPath"] = SourceEnvironment
+	}
+	if c.VertexAI.CollectionIntervalSec != original.CollectionIntervalSec && os.Getenv("TOSAGE_VERTEX_AI_COLLECTION_INTERVAL_SECONDS") != "" {
+		c.ConfigSources["VertexAI.CollectionIntervalSec"] = SourceEnvironment
+	}
+}
+
 // trackDaemonEnvOverrides tracks environment variable overrides for Daemon config
 func (c *AppConfig) trackDaemonEnvOverrides(original *DaemonConfig) {
 	if original == nil {
@@ -350,6 +485,9 @@ func (c *AppConfig) trackDaemonEnvOverrides(original *DaemonConfig) {
 	}
 	if c.Daemon.StartAtLogin != original.StartAtLogin && os.Getenv("TOSAGE_DAEMON_START_AT_LOGIN") != "" {
 		c.ConfigSources["Daemon.StartAtLogin"] = SourceEnvironment
+	}
+	if c.Daemon.HideFromDock != original.HideFromDock && os.Getenv("TOSAGE_DAEMON_HIDE_FROM_DOCK") != "" {
+		c.ConfigSources["Daemon.HideFromDock"] = SourceEnvironment
 	}
 	if c.Daemon.LogPath != original.LogPath && os.Getenv("TOSAGE_DAEMON_LOG_PATH") != "" {
 		c.ConfigSources["Daemon.LogPath"] = SourceEnvironment
@@ -409,6 +547,20 @@ func (c *AppConfig) Validate() error {
 	// Validate Cursor configuration
 	if c.Cursor != nil {
 		if err := c.validateCursor(); err != nil {
+			return err
+		}
+	}
+
+	// Validate Bedrock configuration
+	if c.Bedrock != nil {
+		if err := c.validateBedrock(); err != nil {
+			return err
+		}
+	}
+
+	// Validate VertexAI configuration
+	if c.VertexAI != nil {
+		if err := c.validateVertexAI(); err != nil {
 			return err
 		}
 	}
@@ -477,6 +629,49 @@ func (c *AppConfig) validateCursor() error {
 	// Validate cache timeout is reasonable
 	if c.Cursor.CacheTimeout < 0 {
 		return fmt.Errorf("cursor cache timeout cannot be negative")
+	}
+
+	return nil
+}
+
+// validateBedrock validates Bedrock configuration
+func (c *AppConfig) validateBedrock() error {
+	if c.Bedrock == nil {
+		return nil
+	}
+
+	// Validate collection interval is reasonable when enabled
+	if c.Bedrock.Enabled && c.Bedrock.CollectionIntervalSec < 60 {
+		return fmt.Errorf("bedrock collection interval must be at least 60 seconds")
+	}
+
+	// Validate regions are provided when enabled
+	if c.Bedrock.Enabled && len(c.Bedrock.Regions) == 0 {
+		return fmt.Errorf("bedrock regions cannot be empty when bedrock is enabled")
+	}
+
+	return nil
+}
+
+// validateVertexAI validates VertexAI configuration
+func (c *AppConfig) validateVertexAI() error {
+	if c.VertexAI == nil {
+		return nil
+	}
+
+	// Validate collection interval is reasonable when enabled
+	if c.VertexAI.Enabled && c.VertexAI.CollectionIntervalSec < 60 {
+		return fmt.Errorf("vertex ai collection interval must be at least 60 seconds")
+	}
+
+	// Validate project ID is provided when enabled
+	if c.VertexAI.Enabled && c.VertexAI.ProjectID == "" {
+		return fmt.Errorf("vertex ai project ID cannot be empty when vertex ai is enabled")
+	}
+
+	// Validate locations are provided when enabled
+	if c.VertexAI.Enabled && len(c.VertexAI.Locations) == 0 {
+		return fmt.Errorf("vertex ai locations cannot be empty when vertex ai is enabled")
 	}
 
 	return nil
@@ -555,8 +750,17 @@ func (c *AppConfig) MarkDefaults() {
 	c.ConfigSources["Cursor.DatabasePath"] = SourceDefault
 	c.ConfigSources["Cursor.APITimeout"] = SourceDefault
 	c.ConfigSources["Cursor.CacheTimeout"] = SourceDefault
+	c.ConfigSources["Bedrock.Enabled"] = SourceDefault
+	c.ConfigSources["Bedrock.AWSProfile"] = SourceDefault
+	c.ConfigSources["Bedrock.AssumeRoleARN"] = SourceDefault
+	c.ConfigSources["Bedrock.CollectionIntervalSec"] = SourceDefault
+	c.ConfigSources["VertexAI.Enabled"] = SourceDefault
+	c.ConfigSources["VertexAI.ProjectID"] = SourceDefault
+	c.ConfigSources["VertexAI.ServiceAccountKeyPath"] = SourceDefault
+	c.ConfigSources["VertexAI.CollectionIntervalSec"] = SourceDefault
 	c.ConfigSources["Daemon.Enabled"] = SourceDefault
 	c.ConfigSources["Daemon.StartAtLogin"] = SourceDefault
+	c.ConfigSources["Daemon.HideFromDock"] = SourceDefault
 	c.ConfigSources["Daemon.LogPath"] = SourceDefault
 	c.ConfigSources["Daemon.PidFile"] = SourceDefault
 	c.ConfigSources["Logging.Level"] = SourceDefault
@@ -591,6 +795,22 @@ func (c *AppConfig) MergeJSONConfig(jsonConfig *AppConfig) {
 			c.Cursor = &CursorConfig{}
 		}
 		c.mergeCursorConfig(jsonConfig.Cursor)
+	}
+
+	// Merge Bedrock configuration
+	if jsonConfig.Bedrock != nil {
+		if c.Bedrock == nil {
+			c.Bedrock = &BedrockConfig{}
+		}
+		c.mergeBedrockConfig(jsonConfig.Bedrock)
+	}
+
+	// Merge VertexAI configuration
+	if jsonConfig.VertexAI != nil {
+		if c.VertexAI == nil {
+			c.VertexAI = &VertexAIConfig{}
+		}
+		c.mergeVertexAIConfig(jsonConfig.VertexAI)
 	}
 
 	// Merge Daemon configuration
@@ -663,6 +883,9 @@ func (c *AppConfig) mergeDaemonConfig(jsonConfig *DaemonConfig) {
 	c.Daemon.StartAtLogin = jsonConfig.StartAtLogin
 	c.ConfigSources["Daemon.StartAtLogin"] = SourceJSONFile
 
+	c.Daemon.HideFromDock = jsonConfig.HideFromDock
+	c.ConfigSources["Daemon.HideFromDock"] = SourceJSONFile
+
 	if jsonConfig.LogPath != "" {
 		c.Daemon.LogPath = jsonConfig.LogPath
 		c.ConfigSources["Daemon.LogPath"] = SourceJSONFile
@@ -718,5 +941,53 @@ func (c *AppConfig) mergePromtailConfig(jsonConfig *PromtailConfig) {
 	if jsonConfig.TimeoutSeconds != 0 {
 		c.Logging.Promtail.TimeoutSeconds = jsonConfig.TimeoutSeconds
 		c.ConfigSources["Promtail.TimeoutSeconds"] = SourceJSONFile
+	}
+}
+
+// mergeBedrockConfig merges Bedrock configuration from JSON
+func (c *AppConfig) mergeBedrockConfig(jsonConfig *BedrockConfig) {
+	// Note: bool fields need special handling because zero value is false
+	c.Bedrock.Enabled = jsonConfig.Enabled
+	c.ConfigSources["Bedrock.Enabled"] = SourceJSONFile
+
+	if jsonConfig.AWSProfile != "" {
+		c.Bedrock.AWSProfile = jsonConfig.AWSProfile
+		c.ConfigSources["Bedrock.AWSProfile"] = SourceJSONFile
+	}
+	if jsonConfig.AssumeRoleARN != "" {
+		c.Bedrock.AssumeRoleARN = jsonConfig.AssumeRoleARN
+		c.ConfigSources["Bedrock.AssumeRoleARN"] = SourceJSONFile
+	}
+	if jsonConfig.CollectionIntervalSec != 0 {
+		c.Bedrock.CollectionIntervalSec = jsonConfig.CollectionIntervalSec
+		c.ConfigSources["Bedrock.CollectionIntervalSec"] = SourceJSONFile
+	}
+	if len(jsonConfig.Regions) > 0 {
+		c.Bedrock.Regions = jsonConfig.Regions
+		c.ConfigSources["Bedrock.Regions"] = SourceJSONFile
+	}
+}
+
+// mergeVertexAIConfig merges VertexAI configuration from JSON
+func (c *AppConfig) mergeVertexAIConfig(jsonConfig *VertexAIConfig) {
+	// Note: bool fields need special handling because zero value is false
+	c.VertexAI.Enabled = jsonConfig.Enabled
+	c.ConfigSources["VertexAI.Enabled"] = SourceJSONFile
+
+	if jsonConfig.ProjectID != "" {
+		c.VertexAI.ProjectID = jsonConfig.ProjectID
+		c.ConfigSources["VertexAI.ProjectID"] = SourceJSONFile
+	}
+	if jsonConfig.ServiceAccountKeyPath != "" {
+		c.VertexAI.ServiceAccountKeyPath = jsonConfig.ServiceAccountKeyPath
+		c.ConfigSources["VertexAI.ServiceAccountKeyPath"] = SourceJSONFile
+	}
+	if jsonConfig.CollectionIntervalSec != 0 {
+		c.VertexAI.CollectionIntervalSec = jsonConfig.CollectionIntervalSec
+		c.ConfigSources["VertexAI.CollectionIntervalSec"] = SourceJSONFile
+	}
+	if len(jsonConfig.Locations) > 0 {
+		c.VertexAI.Locations = jsonConfig.Locations
+		c.ConfigSources["VertexAI.Locations"] = SourceJSONFile
 	}
 }
