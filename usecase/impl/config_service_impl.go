@@ -113,6 +113,12 @@ func loadConfigWithFallback(configRepo repository.ConfigRepository, logger domai
 			domain.NewField("error", err.Error()))
 	} else {
 		logger.Debug(ctx, "Successfully loaded environment variables")
+		// Debug: Log Prometheus config after loading env
+		if cfg.Prometheus != nil {
+			logger.Debug(ctx, "Prometheus config after env load",
+				domain.NewField("RemoteWriteURL", cfg.Prometheus.RemoteWriteURL),
+				domain.NewField("IntervalSec", cfg.Prometheus.IntervalSec))
+		}
 	}
 
 	// Validate configuration

@@ -68,6 +68,15 @@ func (s *MetricsServiceImpl) StartPeriodicMetrics() error {
 		return usecase.NewMetricsServiceError("invalid_config", "prometheus config is nil")
 	}
 
+	// Check if IntervalSec is valid
+	if s.config.IntervalSec <= 0 {
+		// Use default interval if not set or invalid
+		s.config.IntervalSec = 600 // 10 minutes default
+		ctx := context.Background()
+		s.logger.Warn(ctx, "Invalid or zero IntervalSec, using default", 
+			domain.NewField("interval_sec", s.config.IntervalSec))
+	}
+
 	// Send initial metrics
 	if err := s.sendMetrics(); err != nil {
 		ctx := context.Background()
