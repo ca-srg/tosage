@@ -51,3 +51,4 @@ dist
 actions.dmg
 local.dmg
 *.csv
+.serena/

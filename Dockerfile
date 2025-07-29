@@ -18,6 +18,3 @@ LABEL org.opencontainers.image.source="https://github.com/ca-srg/tosage" \
 
 # Set entrypoint
 ENTRYPOINT ["/tosage"]
-
-# Default command (CLI mode)
-CMD ["--mode", "cli"]
