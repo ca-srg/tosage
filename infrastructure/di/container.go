@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/Netflix/go-env"
 	"github.com/ca-srg/tosage/domain"
 	"github.com/ca-srg/tosage/domain/repository"
 	"github.com/ca-srg/tosage/infrastructure/config"
@@ -485,22 +486,49 @@ func (c *Container) initControllers() error {
 
 // initPrometheus initializes Prometheus components
 func (c *Container) initPrometheus() error {
+	if c.debugMode {
+		fmt.Fprintf(os.Stderr, "Debug: initPrometheus called, Prometheus config nil: %v\n", c.config.Prometheus == nil)
+		if c.config.Prometheus != nil {
+			fmt.Fprintf(os.Stderr, "Debug: Current RemoteWriteURL: '%s'\n", c.config.Prometheus.RemoteWriteURL)
+		}
+	}
+	
 	// Ensure Prometheus config exists with defaults
 	if c.config.Prometheus == nil {
+		if c.debugMode {
+			fmt.Fprintf(os.Stderr, "Debug: Prometheus config is nil, creating defaults and loading from env\n")
+		}
 		c.config.Prometheus = &config.PrometheusConfig{
-			RemoteWriteURL: "http://localhost:9090/api/v1/write",
+			RemoteWriteURL: "", // Empty by default, must be set via environment variable
 			HostLabel:      "",
 			IntervalSec:    600,
 			TimeoutSec:     30,
 		}
+		
+		// Load Prometheus configuration from environment variables
+		// This ensures that even without config.json, environment variables are respected
+		if err := c.loadPrometheusEnvConfig(); err != nil {
+			if c.debugMode {
+				fmt.Fprintf(os.Stderr, "Debug: Failed to load Prometheus env config: %v\n", err)
+			}
+			// Continue with defaults if environment loading fails
+		}
 	}
 
 	// Initialize metrics repository
-	metricsRepo, err := infraRepo.NewPrometheusMetricsRepository(c.config.Prometheus)
-	if err != nil {
-		return fmt.Errorf("failed to create metrics repository: %w", err)
+	// If RemoteWriteURL is empty, use NoOpMetricsRepository
+	if c.config.Prometheus.RemoteWriteURL == "" {
+		if c.debugMode {
+			fmt.Fprintf(os.Stderr, "Debug: Prometheus RemoteWriteURL is empty, using NoOpMetricsRepository\n")
+		}
+		c.metricsRepo = infraRepo.NewNoOpMetricsRepository()
+	} else {
+		metricsRepo, err := infraRepo.NewPrometheusMetricsRepository(c.config.Prometheus)
+		if err != nil {
+			return fmt.Errorf("failed to create metrics repository: %w", err)
+		}
+		c.metricsRepo = metricsRepo
 	}
-	c.metricsRepo = metricsRepo
 
 	// Initialize metrics service
 	c.metricsService = impl.NewMetricsServiceImpl(
@@ -514,6 +542,47 @@ func (c *Container) initPrometheus() error {
 		c.timezoneService,
 	)
 
+	return nil
+}
+
+// loadPrometheusEnvConfig loads Prometheus configuration from environment variables
+func (c *Container) loadPrometheusEnvConfig() error {
+	if c.config.Prometheus == nil {
+		return fmt.Errorf("prometheus config is nil")
+	}
+	
+	// Store original values to detect changes
+	original := &config.PrometheusConfig{
+		RemoteWriteURL:      c.config.Prometheus.RemoteWriteURL,
+		RemoteWriteUsername: c.config.Prometheus.RemoteWriteUsername,
+		RemoteWritePassword: c.config.Prometheus.RemoteWritePassword,
+		URL:                 c.config.Prometheus.URL,
+		Username:            c.config.Prometheus.Username,
+		Password:            c.config.Prometheus.Password,
+		HostLabel:           c.config.Prometheus.HostLabel,
+		IntervalSec:         c.config.Prometheus.IntervalSec,
+		TimeoutSec:          c.config.Prometheus.TimeoutSec,
+	}
+	
+	// Use Netflix/go-env to unmarshal environment variables
+	_, err := env.UnmarshalFromEnviron(c.config.Prometheus)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal prometheus environment variables: %w", err)
+	}
+	
+	// Debug log environment variable overrides
+	if c.debugMode {
+		if c.config.Prometheus.RemoteWriteURL != original.RemoteWriteURL && os.Getenv("TOSAGE_PROMETHEUS_REMOTE_WRITE_URL") != "" {
+			fmt.Fprintf(os.Stderr, "Debug: Loaded TOSAGE_PROMETHEUS_REMOTE_WRITE_URL from environment: %s\n", c.config.Prometheus.RemoteWriteURL)
+		}
+		if c.config.Prometheus.RemoteWriteUsername != original.RemoteWriteUsername && os.Getenv("TOSAGE_PROMETHEUS_REMOTE_WRITE_USERNAME") != "" {
+			fmt.Fprintf(os.Stderr, "Debug: Loaded TOSAGE_PROMETHEUS_REMOTE_WRITE_USERNAME from environment\n")
+		}
+		if c.config.Prometheus.RemoteWritePassword != original.RemoteWritePassword && os.Getenv("TOSAGE_PROMETHEUS_REMOTE_WRITE_PASSWORD") != "" {
+			fmt.Fprintf(os.Stderr, "Debug: Loaded TOSAGE_PROMETHEUS_REMOTE_WRITE_PASSWORD from environment\n")
+		}
+	}
+	
 	return nil
 }
 
