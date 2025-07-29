@@ -189,11 +189,31 @@ Bedrockメトリクスを有効にするには：
 Vertex AIメトリクスを有効にするには：
 1. `vertex_ai.enabled`を`true`に設定
 2. `vertex_ai.project_id`にGCPプロジェクトIDを設定
-3. GCP認証情報を以下のいずれかで設定：
-   - `service_account_key_path`: サービスアカウントJSONキーファイルのパス
-   - 環境変数`GOOGLE_APPLICATION_CREDENTIALS`
-   - デフォルトのGCP認証チェーン（gcloud auth、メタデータサービスなど）
+3. GCP認証情報を以下のいずれかの方法で設定（優先順位順）：
+   - **サービスアカウントキーJSON**（最優先）：
+     - 設定: `service_account_key`: JSON内容を文字列として
+     - 環境変数: `TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY`
+   - **サービスアカウントキーファイル**：
+     - 設定: `service_account_key_path`: JSONキーファイルへのパス
+     - 環境変数: `TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY_PATH`
+   - **アプリケーションデフォルト認証情報**（最低優先）：
+     - 環境変数: `GOOGLE_APPLICATION_CREDENTIALS`
+     - gcloud auth application-default login
+     - GCPメタデータサービス（GCP上で実行時）
 4. 監視するロケーションを`vertex_ai.locations`に指定
+
+#### 認証優先順位システム
+
+Vertex AI統合では3段階の認証優先順位システムを使用します：
+
+1. **直接サービスアカウントキー** - `service_account_key`が設定または`TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY`環境変数で提供された場合
+2. **サービスアカウントキーファイル** - `service_account_key_path`が提供された場合
+3. **アプリケーションデフォルト認証情報** - Googleのデフォルト認証情報検出を使用
+
+これにより柔軟なデプロイシナリオが可能になります：
+- ローカル開発: `gcloud auth application-default login`を使用
+- CI/CD: サービスアカウントキーを環境変数として設定
+- 本番環境: サービスアカウントキーファイルまたはGCPメタデータサービスを使用
 
 ## 使用方法
 
@@ -266,9 +286,25 @@ docker run --rm \
   -e AWS_REGION="us-east-1" \
   ghcr.io/ca-srg/tosage:latest --bedrock
 
-# Vertex AIメトリクスをチェック
+# アプリケーションデフォルト認証情報でVertex AIメトリクスをチェック
 docker run --rm \
   -e GOOGLE_CLOUD_PROJECT="my-project" \
+  -v ~/.config/gcloud:/home/nonroot/.config/gcloud:ro \
+  ghcr.io/ca-srg/tosage:latest --vertex-ai
+
+# サービスアカウントキーファイルでVertex AIメトリクスをチェック
+docker run --rm \
+  -e TOSAGE_VERTEX_AI_ENABLED="true" \
+  -e TOSAGE_VERTEX_AI_PROJECT_ID="my-project" \
+  -v /path/to/service-account-key.json:/key.json:ro \
+  -e TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY_PATH="/key.json" \
+  ghcr.io/ca-srg/tosage:latest --vertex-ai
+
+# 環境変数としてサービスアカウントキーでVertex AIメトリクスをチェック
+docker run --rm \
+  -e TOSAGE_VERTEX_AI_ENABLED="true" \
+  -e TOSAGE_VERTEX_AI_PROJECT_ID="my-project" \
+  -e TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY='{"type":"service_account",...}' \
   ghcr.io/ca-srg/tosage:latest --vertex-ai
 ```
 

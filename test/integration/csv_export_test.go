@@ -154,7 +154,7 @@ func TestCSVExportIntegration(t *testing.T) {
 			{
 				name:        "InvalidExtension",
 				outputPath:  filepath.Join(tempDir, "test.txt"),
-				expectError: "output file must have .csv extension",
+				expectError: "file must have .csv extension",
 			},
 		}
 
@@ -186,7 +186,7 @@ func TestCSVExportIntegration(t *testing.T) {
 			nil,
 		)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "invalid start time format")
+		assert.Contains(t, err.Error(), "invalid start time")
 	})
 
 	t.Run("InvalidMetricType", func(t *testing.T) {

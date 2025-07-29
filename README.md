@@ -192,11 +192,31 @@ To enable Bedrock metrics:
 To enable Vertex AI metrics:
 1. Set `vertex_ai.enabled` to `true`
 2. Set `vertex_ai.project_id` to your GCP project ID
-3. Configure GCP credentials using one of:
-   - `service_account_key_path`: Path to service account JSON key file
-   - Environment variable `GOOGLE_APPLICATION_CREDENTIALS`
-   - Default GCP credential chain (gcloud auth, metadata service, etc.)
+3. Configure GCP credentials using one of these methods (in priority order):
+   - **Service Account Key JSON** (highest priority):
+     - Config: `service_account_key`: JSON content as string
+     - Environment: `TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY`
+   - **Service Account Key File**:
+     - Config: `service_account_key_path`: Path to JSON key file
+     - Environment: `TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY_PATH`
+   - **Application Default Credentials** (lowest priority):
+     - Environment: `GOOGLE_APPLICATION_CREDENTIALS`
+     - gcloud auth application-default login
+     - GCP metadata service (when running on GCP)
 4. Specify locations to monitor in `vertex_ai.locations`
+
+#### Authentication Priority System
+
+The Vertex AI integration uses a three-tier authentication priority system:
+
+1. **Direct Service Account Key** - If `service_account_key` is provided in config or via `TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY` environment variable
+2. **Service Account Key File** - If `service_account_key_path` is provided
+3. **Application Default Credentials** - Uses Google's default credential discovery
+
+This allows flexible deployment scenarios:
+- For local development: Use `gcloud auth application-default login`
+- For CI/CD: Set service account key as environment variable
+- For production: Use service account key file or GCP metadata service
 
 ## Usage
 
@@ -331,9 +351,25 @@ docker run --rm \
   -e AWS_REGION="us-east-1" \
   ghcr.io/ca-srg/tosage:latest --bedrock
 
-# Check Vertex AI metrics
+# Check Vertex AI metrics with Application Default Credentials
 docker run --rm \
   -e GOOGLE_CLOUD_PROJECT="my-project" \
+  -v ~/.config/gcloud:/home/nonroot/.config/gcloud:ro \
+  ghcr.io/ca-srg/tosage:latest --vertex-ai
+
+# Check Vertex AI metrics with service account key file
+docker run --rm \
+  -e TOSAGE_VERTEX_AI_ENABLED="true" \
+  -e TOSAGE_VERTEX_AI_PROJECT_ID="my-project" \
+  -v /path/to/service-account-key.json:/key.json:ro \
+  -e TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY_PATH="/key.json" \
+  ghcr.io/ca-srg/tosage:latest --vertex-ai
+
+# Check Vertex AI metrics with service account key as environment variable
+docker run --rm \
+  -e TOSAGE_VERTEX_AI_ENABLED="true" \
+  -e TOSAGE_VERTEX_AI_PROJECT_ID="my-project" \
+  -e TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY='{"type":"service_account",...}' \
   ghcr.io/ca-srg/tosage:latest --vertex-ai
 ```
 

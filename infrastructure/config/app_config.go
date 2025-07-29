@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"time"
@@ -68,7 +69,7 @@ type BedrockConfig struct {
 	AssumeRoleARN string `json:"assume_role_arn,omitempty" env:"TOSAGE_BEDROCK_ASSUME_ROLE_ARN,default="`
 
 	// CollectionIntervalSec is how often to collect metrics in seconds
-	CollectionIntervalSec int `json:"collection_interval_seconds,omitempty" env:"TOSAGE_BEDROCK_COLLECTION_INTERVAL_SECONDS,default=900"`
+	CollectionIntervalSec int `json:"collection_interval_seconds,omitempty" env:"TOSAGE_BEDROCK_COLLECTION_INTERVAL_SECONDS,default=600"`
 }
 
 // VertexAIConfig holds Google Cloud Vertex AI integration configuration
@@ -85,8 +86,11 @@ type VertexAIConfig struct {
 	// ServiceAccountKeyPath is the path to the service account key file (optional)
 	ServiceAccountKeyPath string `json:"service_account_key_path,omitempty" env:"TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY_PATH,default="`
 
+	// ServiceAccountKey is the service account key JSON content (optional)
+	ServiceAccountKey string `json:"service_account_key,omitempty" env:"TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY,default="`
+
 	// CollectionIntervalSec is how often to collect metrics in seconds
-	CollectionIntervalSec int `json:"collection_interval_seconds,omitempty" env:"TOSAGE_VERTEX_AI_COLLECTION_INTERVAL_SECONDS,default=900"`
+	CollectionIntervalSec int `json:"collection_interval_seconds,omitempty" env:"TOSAGE_VERTEX_AI_COLLECTION_INTERVAL_SECONDS,default=600"`
 }
 
 // DaemonConfig holds daemon mode configuration
@@ -229,14 +233,15 @@ func DefaultConfig() *AppConfig {
 			Regions:               []string{"us-east-1", "us-west-2"},
 			AWSProfile:            "",
 			AssumeRoleARN:         "",
-			CollectionIntervalSec: 900, // 15 minutes
+			CollectionIntervalSec: 600, // 10 minutes
 		},
 		VertexAI: &VertexAIConfig{
 			Enabled:               false, // Disabled by default for security
 			ProjectID:             "",
 			Locations:             []string{"us-central1", "us-east1"},
 			ServiceAccountKeyPath: "",
-			CollectionIntervalSec: 900, // 15 minutes
+			ServiceAccountKey:     "",
+			CollectionIntervalSec: 600, // 10 minutes
 		},
 		Daemon: &DaemonConfig{
 			Enabled:      false,
@@ -362,6 +367,7 @@ func (c *AppConfig) LoadFromEnv() error {
 			ProjectID:             c.VertexAI.ProjectID,
 			Locations:             c.VertexAI.Locations,
 			ServiceAccountKeyPath: c.VertexAI.ServiceAccountKeyPath,
+			ServiceAccountKey:     c.VertexAI.ServiceAccountKey,
 			CollectionIntervalSec: c.VertexAI.CollectionIntervalSec,
 		}
 	}
@@ -577,6 +583,9 @@ func (c *AppConfig) trackVertexAIEnvOverrides(original *VertexAIConfig) {
 	}
 	if c.VertexAI.ServiceAccountKeyPath != original.ServiceAccountKeyPath && os.Getenv("TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY_PATH") != "" {
 		c.ConfigSources["VertexAI.ServiceAccountKeyPath"] = SourceEnvironment
+	}
+	if c.VertexAI.ServiceAccountKey != original.ServiceAccountKey && os.Getenv("TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY") != "" {
+		c.ConfigSources["VertexAI.ServiceAccountKey"] = SourceEnvironment
 	}
 	if c.VertexAI.CollectionIntervalSec != original.CollectionIntervalSec && os.Getenv("TOSAGE_VERTEX_AI_COLLECTION_INTERVAL_SECONDS") != "" {
 		c.ConfigSources["VertexAI.CollectionIntervalSec"] = SourceEnvironment
@@ -819,6 +828,27 @@ func (c *AppConfig) validateVertexAI() error {
 		return fmt.Errorf("vertex ai locations cannot be empty when vertex ai is enabled")
 	}
 
+	// Validate service account key JSON if provided
+	if c.VertexAI.ServiceAccountKey != "" {
+		var keyData map[string]interface{}
+		if err := json.Unmarshal([]byte(c.VertexAI.ServiceAccountKey), &keyData); err != nil {
+			return fmt.Errorf("invalid service account key JSON: %w", err)
+		}
+
+		// Check required fields in service account key
+		requiredFields := []string{"type", "project_id", "private_key_id", "private_key", "client_email"}
+		for _, field := range requiredFields {
+			if _, ok := keyData[field]; !ok {
+				return fmt.Errorf("service account key missing required field: %s", field)
+			}
+		}
+
+		// Validate type field
+		if keyType, ok := keyData["type"].(string); !ok || keyType != "service_account" {
+			return fmt.Errorf("service account key must have type 'service_account'")
+		}
+	}
+
 	return nil
 }
 
@@ -937,6 +967,7 @@ func (c *AppConfig) MarkDefaults() {
 	c.ConfigSources["VertexAI.Enabled"] = SourceDefault
 	c.ConfigSources["VertexAI.ProjectID"] = SourceDefault
 	c.ConfigSources["VertexAI.ServiceAccountKeyPath"] = SourceDefault
+	c.ConfigSources["VertexAI.ServiceAccountKey"] = SourceDefault
 	c.ConfigSources["VertexAI.CollectionIntervalSec"] = SourceDefault
 	c.ConfigSources["Daemon.Enabled"] = SourceDefault
 	c.ConfigSources["Daemon.StartAtLogin"] = SourceDefault
@@ -1189,6 +1220,10 @@ func (c *AppConfig) mergeVertexAIConfig(jsonConfig *VertexAIConfig) {
 	if jsonConfig.ServiceAccountKeyPath != "" {
 		c.VertexAI.ServiceAccountKeyPath = jsonConfig.ServiceAccountKeyPath
 		c.ConfigSources["VertexAI.ServiceAccountKeyPath"] = SourceJSONFile
+	}
+	if jsonConfig.ServiceAccountKey != "" {
+		c.VertexAI.ServiceAccountKey = jsonConfig.ServiceAccountKey
+		c.ConfigSources["VertexAI.ServiceAccountKey"] = SourceJSONFile
 	}
 	if jsonConfig.CollectionIntervalSec != 0 {
 		c.VertexAI.CollectionIntervalSec = jsonConfig.CollectionIntervalSec

@@ -8,6 +8,7 @@ import (
 
 	"github.com/ca-srg/tosage/domain"
 	"github.com/ca-srg/tosage/domain/repository"
+	"github.com/ca-srg/tosage/infrastructure/auth"
 	"github.com/ca-srg/tosage/infrastructure/config"
 	"github.com/ca-srg/tosage/infrastructure/logging"
 	infraRepo "github.com/ca-srg/tosage/infrastructure/repository"
@@ -257,7 +258,7 @@ func (c *Container) initConfig() error {
 	// Don't update the config in configService to avoid overwriting environment variables
 	// Just use the modified config directly
 	c.config = cfg
-	
+
 	return nil
 }
 
@@ -359,32 +360,54 @@ func (c *Container) initRepositories() error {
 			fmt.Fprintf(os.Stderr, "Warning: Vertex AI is enabled but project ID is not set\n")
 			fmt.Fprintf(os.Stderr, "Please set GOOGLE_CLOUD_PROJECT environment variable.\n")
 		} else {
-			// Use REST repository with retry logic
-			vertexAIRepo, err := infraRepo.NewVertexAIRESTRepository(c.config.VertexAI.ProjectID, c.config.VertexAI.ServiceAccountKeyPath)
+			// Create authenticator first
+			authenticator, err := auth.NewVertexAIAuthenticator(
+				c.config.VertexAI.ServiceAccountKey,
+				c.config.VertexAI.ServiceAccountKeyPath,
+			)
 			if err != nil {
 				// Log warning but don't fail initialization
-				c.logger.Warn(context.TODO(), "Failed to initialize Vertex AI repository", domain.NewField("error", err.Error()))
+				c.logger.Warn(context.TODO(), "Failed to create Vertex AI authenticator", domain.NewField("error", err.Error()))
 				// Also output to stderr for immediate visibility
-				fmt.Fprintf(os.Stderr, "Warning: Failed to initialize Vertex AI repository: %v\n", err)
+				fmt.Fprintf(os.Stderr, "Warning: Failed to create Vertex AI authenticator: %v\n", err)
 				fmt.Fprintf(os.Stderr, "Please check your Google Cloud credentials configuration.\n")
 
 				// In debug mode, provide more detailed information
 				if c.debugMode {
-					c.logger.Debug(context.TODO(), "Vertex AI initialization details",
+					c.logger.Debug(context.TODO(), "Vertex AI authenticator initialization details",
 						domain.NewField("project_id", c.config.VertexAI.ProjectID),
 						domain.NewField("service_account_key_path", c.config.VertexAI.ServiceAccountKeyPath),
-						domain.NewField("locations", c.config.VertexAI.Locations),
+						domain.NewField("has_service_account_key", c.config.VertexAI.ServiceAccountKey != ""),
 						domain.NewField("error_type", fmt.Sprintf("%T", err)),
 						domain.NewField("error_details", err.Error()))
 					fmt.Fprintf(os.Stderr, "Debug: Project ID: %s\n", c.config.VertexAI.ProjectID)
 					fmt.Fprintf(os.Stderr, "Debug: Service Account Key Path: %s\n", c.config.VertexAI.ServiceAccountKeyPath)
-					fmt.Fprintf(os.Stderr, "Debug: Locations: %v\n", c.config.VertexAI.Locations)
+					fmt.Fprintf(os.Stderr, "Debug: Has Service Account Key: %v\n", c.config.VertexAI.ServiceAccountKey != "")
 				}
 			} else {
-				c.vertexAIRepo = vertexAIRepo
-				c.logger.Info(context.TODO(), "Vertex AI REST repository initialized with retry logic",
-					domain.NewField("project_id", c.config.VertexAI.ProjectID),
-					domain.NewField("locations", c.config.VertexAI.Locations))
+				// Create REST repository with authenticator
+				vertexAIRepo, err := infraRepo.NewVertexAIRESTRepository(c.config.VertexAI.ProjectID, authenticator)
+				if err != nil {
+					// Log warning but don't fail initialization
+					c.logger.Warn(context.TODO(), "Failed to initialize Vertex AI repository", domain.NewField("error", err.Error()))
+					// Also output to stderr for immediate visibility
+					fmt.Fprintf(os.Stderr, "Warning: Failed to initialize Vertex AI repository: %v\n", err)
+
+					// In debug mode, provide more detailed information
+					if c.debugMode {
+						c.logger.Debug(context.TODO(), "Vertex AI repository initialization details",
+							domain.NewField("project_id", c.config.VertexAI.ProjectID),
+							domain.NewField("locations", c.config.VertexAI.Locations),
+							domain.NewField("error_type", fmt.Sprintf("%T", err)),
+							domain.NewField("error_details", err.Error()))
+						fmt.Fprintf(os.Stderr, "Debug: Locations: %v\n", c.config.VertexAI.Locations)
+					}
+				} else {
+					c.vertexAIRepo = vertexAIRepo
+					c.logger.Info(context.TODO(), "Vertex AI REST repository initialized with retry logic",
+						domain.NewField("project_id", c.config.VertexAI.ProjectID),
+						domain.NewField("locations", c.config.VertexAI.Locations))
+				}
 			}
 		}
 	}
@@ -436,6 +459,7 @@ func (c *Container) initUseCases() error {
 			ProjectID:             c.config.VertexAI.ProjectID,
 			Locations:             c.config.VertexAI.Locations,
 			ServiceAccountKeyPath: c.config.VertexAI.ServiceAccountKeyPath,
+			ServiceAccountKey:     c.config.VertexAI.ServiceAccountKey,
 			CollectionInterval:    time.Duration(c.config.VertexAI.CollectionIntervalSec) * time.Second,
 		}
 		c.vertexAIService = impl.NewVertexAIService(c.vertexAIRepo, vertexAIConfig)
