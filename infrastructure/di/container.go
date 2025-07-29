@@ -254,7 +254,10 @@ func (c *Container) initConfig() error {
 		}
 	}
 
+	// Don't update the config in configService to avoid overwriting environment variables
+	// Just use the modified config directly
 	c.config = cfg
+	
 	return nil
 }
 
@@ -514,11 +517,17 @@ func (c *Container) initPrometheus() error {
 		}
 		c.metricsRepo = infraRepo.NewNoOpMetricsRepository()
 	} else {
+		if c.debugMode {
+			fmt.Fprintf(os.Stderr, "Debug: Creating PrometheusMetricsRepository with URL: %s\n", c.config.Prometheus.RemoteWriteURL)
+		}
 		metricsRepo, err := infraRepo.NewPrometheusMetricsRepository(c.config.Prometheus)
 		if err != nil {
 			return fmt.Errorf("failed to create metrics repository: %w", err)
 		}
 		c.metricsRepo = metricsRepo
+		if c.debugMode {
+			fmt.Fprintf(os.Stderr, "Debug: PrometheusMetricsRepository created successfully\n")
+		}
 	}
 
 	// Initialize metrics service
