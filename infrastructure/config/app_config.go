@@ -277,12 +277,20 @@ func MinimalDefaultConfig() *AppConfig {
 			URL:                 "",
 			Username:            "",
 			Password:            "",
+			HostLabel:           "",
+			IntervalSec:         600, // 10 minutes
+			TimeoutSec:          30,
 		},
 		Logging: &LoggingConfig{
+			Level: "info",
+			Debug: false,
 			Promtail: &PromtailConfig{
-				URL:      "",
-				Username: "",
-				Password: "",
+				URL:              "",
+				Username:         "",
+				Password:         "",
+				BatchWaitSeconds: 1,
+				BatchCapacity:    100,
+				TimeoutSeconds:   5,
 			},
 		},
 		CSVExport: &CSVExportConfig{
@@ -482,6 +490,13 @@ func (c *AppConfig) LoadFromEnv() error {
 
 // trackPrometheusEnvOverrides tracks environment variable overrides for Prometheus config
 func (c *AppConfig) trackPrometheusEnvOverrides(original *PrometheusConfig) {
+	// Debug: Log what we're tracking
+	if os.Getenv("TOSAGE_DEBUG") == "true" {
+		fmt.Fprintf(os.Stderr, "Debug: trackPrometheusEnvOverrides called\n")
+		fmt.Fprintf(os.Stderr, "Debug: ENV TOSAGE_PROMETHEUS_REMOTE_WRITE_URL='%s'\n", os.Getenv("TOSAGE_PROMETHEUS_REMOTE_WRITE_URL"))
+		fmt.Fprintf(os.Stderr, "Debug: Config RemoteWriteURL='%s'\n", c.Prometheus.RemoteWriteURL)
+		fmt.Fprintf(os.Stderr, "Debug: Original RemoteWriteURL='%s'\n", original.RemoteWriteURL)
+	}
 	if original == nil {
 		return
 	}

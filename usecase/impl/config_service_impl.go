@@ -113,6 +113,12 @@ func loadConfigWithFallback(configRepo repository.ConfigRepository, logger domai
 			domain.NewField("error", err.Error()))
 	} else {
 		logger.Debug(ctx, "Successfully loaded environment variables")
+		// Debug: Log Prometheus config after loading env
+		if cfg.Prometheus != nil {
+			logger.Debug(ctx, "Prometheus config after env load",
+				domain.NewField("RemoteWriteURL", cfg.Prometheus.RemoteWriteURL),
+				domain.NewField("IntervalSec", cfg.Prometheus.IntervalSec))
+		}
 	}
 
 	// Validate configuration
@@ -343,6 +349,8 @@ func (s *ConfigServiceImpl) EnsureConfigExists() error {
 	s.logger.Info(ctx, "Configuration file not found, creating template",
 		domain.NewField("config_path", configPath))
 
+	// Don't use the current in-memory config to create the template
+	// because it may contain sensitive data from environment variables
 	defaultConfig := config.MinimalDefaultConfig()
 	if err := s.configRepo.Save(defaultConfig); err != nil {
 		s.logger.Error(ctx, "Failed to create template configuration",
@@ -351,8 +359,9 @@ func (s *ConfigServiceImpl) EnsureConfigExists() error {
 		return fmt.Errorf("failed to create template config: %w", err)
 	}
 
-	// メモリ内の設定も更新
-	s.config = defaultConfig
+	// IMPORTANT: Do NOT update the in-memory config here
+	// The in-memory config already has environment variables loaded
+	// and we don't want to lose them
 	s.logger.Info(ctx, "Template configuration created successfully",
 		domain.NewField("config_path", configPath))
 
