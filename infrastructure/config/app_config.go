@@ -209,7 +209,7 @@ func DefaultConfig() *AppConfig {
 		Version:    1, // Current configuration version
 		ClaudePath: "",
 		Prometheus: &PrometheusConfig{
-			RemoteWriteURL:      "http://localhost:9090/api/v1/write", // デフォルトのPrometheus URL
+			RemoteWriteURL:      "", // Empty by default, must be set via environment variable or config.json
 			RemoteWriteUsername: "",
 			RemoteWritePassword: "",
 			URL:                 "",
