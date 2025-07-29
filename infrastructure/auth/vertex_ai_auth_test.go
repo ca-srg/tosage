@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/oauth2/google"
 )
 
 func TestValidateServiceAccountKey(t *testing.T) {
@@ -163,6 +164,18 @@ func TestNewVertexAIAuthenticator(t *testing.T) {
 	// It doesn't test actual Google Cloud authentication which would require
 	// valid credentials and network access.
 
+	// Check if ADC (Application Default Credentials) is available
+	// In CI environments like GitHub Actions, ADC might not be available
+	ctx := context.Background()
+	_, adcErr := google.FindDefaultCredentials(ctx, "https://www.googleapis.com/auth/cloud-platform")
+	adcAvailable := adcErr == nil
+
+	// Log ADC availability for debugging
+	t.Logf("ADC (Application Default Credentials) available: %v", adcAvailable)
+	if !adcAvailable {
+		t.Logf("ADC error: %v", adcErr)
+	}
+
 	tests := []struct {
 		name                  string
 		serviceAccountKey     string
@@ -174,7 +187,8 @@ func TestNewVertexAIAuthenticator(t *testing.T) {
 			name:                  "no credentials provided",
 			serviceAccountKey:     "",
 			serviceAccountKeyPath: "",
-			wantErr:               false, // Should succeed and use default credentials
+			wantErr:               !adcAvailable, // Error if ADC is not available
+			errMsg:                "failed to create token source",
 		},
 		{
 			name: "valid service account key JSON",
