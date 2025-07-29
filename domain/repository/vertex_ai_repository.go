@@ -40,6 +40,9 @@ type VertexAIConfig struct {
 	// ServiceAccountKeyPath is the path to the service account key file (optional)
 	ServiceAccountKeyPath string
 
+	// ServiceAccountKey is the service account key JSON content (optional)
+	ServiceAccountKey string
+
 	// CollectionInterval is how often to collect metrics
 	CollectionInterval time.Duration
 }

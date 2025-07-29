@@ -8,30 +8,34 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os/exec"
 	"time"
 
 	"github.com/ca-srg/tosage/domain/entity"
 	"github.com/ca-srg/tosage/domain/repository"
+	"github.com/ca-srg/tosage/infrastructure/auth"
 )
 
 // VertexAIRESTRepository implements VertexAIRepository using REST API with retry logic
 type VertexAIRESTRepository struct {
-	projectID             string
-	serviceAccountKeyPath string
-	client                *http.Client
-	maxRetries            int
-	retryDelay            time.Duration
+	projectID     string
+	authenticator auth.VertexAIAuthenticator
+	client        *http.Client
+	maxRetries    int
+	retryDelay    time.Duration
 }
 
 // NewVertexAIRESTRepository creates a new Vertex AI REST repository
-func NewVertexAIRESTRepository(projectID, serviceAccountKeyPath string) (*VertexAIRESTRepository, error) {
+func NewVertexAIRESTRepository(projectID string, authenticator auth.VertexAIAuthenticator) (*VertexAIRESTRepository, error) {
+	if authenticator == nil {
+		return nil, fmt.Errorf("authenticator cannot be nil")
+	}
+
 	return &VertexAIRESTRepository{
-		projectID:             projectID,
-		serviceAccountKeyPath: serviceAccountKeyPath,
-		client:                &http.Client{Timeout: 30 * time.Second},
-		maxRetries:            10,
-		retryDelay:            2 * time.Second,
+		projectID:     projectID,
+		authenticator: authenticator,
+		client:        &http.Client{Timeout: 30 * time.Second},
+		maxRetries:    10,
+		retryDelay:    2 * time.Second,
 	}, nil
 }
 
@@ -67,23 +71,8 @@ type ErrorResponse struct {
 }
 
 // getAccessToken retrieves a valid access token
-func (r *VertexAIRESTRepository) getAccessToken() (string, error) {
-	var cmd *exec.Cmd
-	if r.serviceAccountKeyPath != "" {
-		// Use service account if provided
-		cmd = exec.Command("gcloud", "auth", "print-access-token",
-			"--impersonate-service-account", r.serviceAccountKeyPath)
-	} else {
-		// Use application default credentials
-		cmd = exec.Command("gcloud", "auth", "application-default", "print-access-token")
-	}
-
-	output, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("failed to get access token: %w", err)
-	}
-
-	return string(bytes.TrimSpace(output)), nil
+func (r *VertexAIRESTRepository) getAccessToken(ctx context.Context) (string, error) {
+	return r.authenticator.GetAccessToken(ctx)
 }
 
 // callTokenCountAPI calls the Vertex AI token count API with retry logic
@@ -112,7 +101,7 @@ func (r *VertexAIRESTRepository) callTokenCountAPI(ctx context.Context, location
 		log.Printf("[DEBUG] Attempt %d/%d to call Vertex AI token count API", attempt, r.maxRetries)
 
 		// Get fresh token for each attempt
-		token, err := r.getAccessToken()
+		token, err := r.getAccessToken(ctx)
 		if err != nil {
 			lastErr = err
 			log.Printf("[DEBUG] Failed to get access token: %v", err)
