@@ -16,6 +16,8 @@ type VertexAIAuthenticator interface {
 	GetAccessToken(ctx context.Context) (string, error)
 	// ValidateCredentials validates the service account key structure
 	ValidateCredentials() error
+	// IsUsingADC returns true if the authenticator is using Application Default Credentials
+	IsUsingADC() bool
 }
 
 // vertexAIAuthenticatorImpl implements VertexAIAuthenticator
@@ -68,6 +70,11 @@ func (a *vertexAIAuthenticatorImpl) GetAccessToken(ctx context.Context) (string,
 	}
 
 	return token.AccessToken, nil
+}
+
+// IsUsingADC returns true if the authenticator is using Application Default Credentials
+func (a *vertexAIAuthenticatorImpl) IsUsingADC() bool {
+	return a.serviceAccountKey == "" && a.serviceAccountKeyPath == ""
 }
 
 // ValidateCredentials validates the service account key structure

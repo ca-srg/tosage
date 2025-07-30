@@ -52,3 +52,8 @@ actions.dmg
 local.dmg
 *.csv
 .serena/
+
+# Service account keys
+gcp-sa-key.json
+*-sa-key.json
+service-account-*.json

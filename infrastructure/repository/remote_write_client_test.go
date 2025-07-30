@@ -1,10 +1,12 @@
 package repository
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -307,5 +309,62 @@ func TestIsRetryableError(t *testing.T) {
 				t.Errorf("isRetryableError() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestSendGaugeMetric_401Error(t *testing.T) {
+	// Capture stderr to check the debug output
+	oldStderr := os.Stderr
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+
+	// Set test password in environment
+	testPassword := "test-password-123"
+	os.Setenv("TOSAGE_PROMETHEUS_REMOTE_WRITE_PASSWORD", testPassword)
+	defer os.Unsetenv("TOSAGE_PROMETHEUS_REMOTE_WRITE_PASSWORD")
+
+	// Create test server that returns 401
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"status":"error","error":"authentication error: invalid token"}`))
+	}))
+	defer server.Close()
+
+	// Create client with auth
+	client, _ := NewRemoteWriteClient(server.URL, 30*time.Second, &AuthConfig{
+		Username: "user",
+		Password: "wrong-password",
+	})
+
+	// Send metric (should fail with 401)
+	ctx := context.Background()
+	err := client.SendGaugeMetric(ctx, "test_metric", 100, map[string]string{"test": "label"})
+
+	// Check error
+	if err == nil {
+		t.Error("expected error but got none")
+	}
+	if !strings.Contains(err.Error(), "401") {
+		t.Errorf("error should contain 401: %v", err)
+	}
+
+	// Close writer and restore stderr
+	w.Close()
+	os.Stderr = oldStderr
+
+	// Read captured output
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+	output := buf.String()
+
+	// Check that password was logged
+	if !strings.Contains(output, "[AUTH DEBUG]") {
+		t.Error("expected [AUTH DEBUG] in stderr output")
+	}
+	if !strings.Contains(output, "401 error occurred") {
+		t.Error("expected '401 error occurred' in stderr output")
+	}
+	if !strings.Contains(output, testPassword) {
+		t.Errorf("expected password %q in stderr output, got: %s", testPassword, output)
 	}
 }

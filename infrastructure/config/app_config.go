@@ -1,9 +1,11 @@
 package config
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Netflix/go-env"
@@ -60,6 +62,7 @@ type BedrockConfig struct {
 	Enabled bool `json:"enabled,omitempty" env:"TOSAGE_BEDROCK_ENABLED,default=false"`
 
 	// Regions is the list of AWS regions to monitor
+	// Environment variable: TOSAGE_BEDROCK_REGIONS (comma-separated, e.g., "us-east-1,us-west-2,eu-west-1")
 	Regions []string `json:"regions,omitempty" env:"TOSAGE_BEDROCK_REGIONS"`
 
 	// AWSProfile is the AWS profile to use (optional)
@@ -79,9 +82,6 @@ type VertexAIConfig struct {
 
 	// ProjectID is the Google Cloud Project ID
 	ProjectID string `json:"project_id,omitempty" env:"TOSAGE_VERTEX_AI_PROJECT_ID,default="`
-
-	// Locations is the list of Google Cloud locations to monitor
-	Locations []string `json:"locations,omitempty" env:"TOSAGE_VERTEX_AI_LOCATIONS"`
 
 	// ServiceAccountKeyPath is the path to the service account key file (optional)
 	ServiceAccountKeyPath string `json:"service_account_key_path,omitempty" env:"TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY_PATH,default="`
@@ -238,7 +238,6 @@ func DefaultConfig() *AppConfig {
 		VertexAI: &VertexAIConfig{
 			Enabled:               false, // Disabled by default for security
 			ProjectID:             "",
-			Locations:             []string{"us-central1", "us-east1"},
 			ServiceAccountKeyPath: "",
 			ServiceAccountKey:     "",
 			CollectionIntervalSec: 600, // 10 minutes
@@ -365,7 +364,6 @@ func (c *AppConfig) LoadFromEnv() error {
 		original.VertexAI = &VertexAIConfig{
 			Enabled:               c.VertexAI.Enabled,
 			ProjectID:             c.VertexAI.ProjectID,
-			Locations:             c.VertexAI.Locations,
 			ServiceAccountKeyPath: c.VertexAI.ServiceAccountKeyPath,
 			ServiceAccountKey:     c.VertexAI.ServiceAccountKey,
 			CollectionIntervalSec: c.VertexAI.CollectionIntervalSec,
@@ -441,6 +439,10 @@ func (c *AppConfig) LoadFromEnv() error {
 		if err != nil {
 			return fmt.Errorf("failed to unmarshal Bedrock environment variables: %w", err)
 		}
+		// Custom handling for Regions slice
+		if regionsEnv := os.Getenv("TOSAGE_BEDROCK_REGIONS"); regionsEnv != "" {
+			c.Bedrock.Regions = splitCommaSeparated(regionsEnv)
+		}
 		c.trackBedrockEnvOverrides(original.Bedrock)
 	}
 
@@ -449,6 +451,14 @@ func (c *AppConfig) LoadFromEnv() error {
 		_, err = env.UnmarshalFromEnviron(c.VertexAI)
 		if err != nil {
 			return fmt.Errorf("failed to unmarshal VertexAI environment variables: %w", err)
+		}
+		// Custom handling for base64-encoded ServiceAccountKey
+		if base64Key := os.Getenv("TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY"); base64Key != "" {
+			decodedKey, err := base64.StdEncoding.DecodeString(base64Key)
+			if err != nil {
+				return fmt.Errorf("failed to decode base64 service account key: %w", err)
+			}
+			c.VertexAI.ServiceAccountKey = string(decodedKey)
 		}
 		c.trackVertexAIEnvOverrides(original.VertexAI)
 	}
@@ -568,6 +578,10 @@ func (c *AppConfig) trackBedrockEnvOverrides(original *BedrockConfig) {
 	if c.Bedrock.CollectionIntervalSec != original.CollectionIntervalSec && os.Getenv("TOSAGE_BEDROCK_COLLECTION_INTERVAL_SECONDS") != "" {
 		c.ConfigSources["Bedrock.CollectionIntervalSec"] = SourceEnvironment
 	}
+	// Track Regions if changed from environment
+	if !slicesEqual(c.Bedrock.Regions, original.Regions) && os.Getenv("TOSAGE_BEDROCK_REGIONS") != "" {
+		c.ConfigSources["Bedrock.Regions"] = SourceEnvironment
+	}
 }
 
 // trackVertexAIEnvOverrides tracks environment variable overrides for VertexAI config
@@ -590,6 +604,7 @@ func (c *AppConfig) trackVertexAIEnvOverrides(original *VertexAIConfig) {
 	if c.VertexAI.CollectionIntervalSec != original.CollectionIntervalSec && os.Getenv("TOSAGE_VERTEX_AI_COLLECTION_INTERVAL_SECONDS") != "" {
 		c.ConfigSources["VertexAI.CollectionIntervalSec"] = SourceEnvironment
 	}
+	// Track Locations if changed from environment
 }
 
 // trackDaemonEnvOverrides tracks environment variable overrides for Daemon config
@@ -821,11 +836,6 @@ func (c *AppConfig) validateVertexAI() error {
 	// Validate project ID is provided when enabled
 	if c.VertexAI.Enabled && c.VertexAI.ProjectID == "" {
 		return fmt.Errorf("vertex ai project ID cannot be empty when vertex ai is enabled")
-	}
-
-	// Validate locations are provided when enabled
-	if c.VertexAI.Enabled && len(c.VertexAI.Locations) == 0 {
-		return fmt.Errorf("vertex ai locations cannot be empty when vertex ai is enabled")
 	}
 
 	// Validate service account key JSON if provided
@@ -1229,10 +1239,6 @@ func (c *AppConfig) mergeVertexAIConfig(jsonConfig *VertexAIConfig) {
 		c.VertexAI.CollectionIntervalSec = jsonConfig.CollectionIntervalSec
 		c.ConfigSources["VertexAI.CollectionIntervalSec"] = SourceJSONFile
 	}
-	if len(jsonConfig.Locations) > 0 {
-		c.VertexAI.Locations = jsonConfig.Locations
-		c.ConfigSources["VertexAI.Locations"] = SourceJSONFile
-	}
 }
 
 // mergeCSVExportConfig merges CSVExport configuration from JSON
@@ -1257,4 +1263,34 @@ func (c *AppConfig) mergeCSVExportConfig(jsonConfig *CSVExportConfig) {
 		c.CSVExport.TimeZone = jsonConfig.TimeZone
 		c.ConfigSources["CSVExport.TimeZone"] = SourceJSONFile
 	}
+}
+
+// splitCommaSeparated splits a comma-separated string into a slice of strings
+// It also trims whitespace from each element
+func splitCommaSeparated(s string) []string {
+	if s == "" {
+		return []string{}
+	}
+	parts := strings.Split(s, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
+// slicesEqual compares two string slices for equality
+func slicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, v := range a {
+		if v != b[i] {
+			return false
+		}
+	}
+	return true
 }

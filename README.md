@@ -195,7 +195,7 @@ To enable Vertex AI metrics:
 3. Configure GCP credentials using one of these methods (in priority order):
    - **Service Account Key JSON** (highest priority):
      - Config: `service_account_key`: JSON content as string
-     - Environment: `TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY`
+     - Environment: `TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY` (base64 encoded JSON)
    - **Service Account Key File**:
      - Config: `service_account_key_path`: Path to JSON key file
      - Environment: `TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY_PATH`
@@ -209,7 +209,7 @@ To enable Vertex AI metrics:
 
 The Vertex AI integration uses a three-tier authentication priority system:
 
-1. **Direct Service Account Key** - If `service_account_key` is provided in config or via `TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY` environment variable
+1. **Direct Service Account Key** - If `service_account_key` is provided in config or via `TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY` environment variable (must be base64 encoded when using environment variable)
 2. **Service Account Key File** - If `service_account_key_path` is provided
 3. **Application Default Credentials** - Uses Google's default credential discovery
 
@@ -365,11 +365,12 @@ docker run --rm \
   -e TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY_PATH="/key.json" \
   ghcr.io/ca-srg/tosage:latest --vertex-ai
 
-# Check Vertex AI metrics with service account key as environment variable
+# Check Vertex AI metrics with service account key as environment variable (base64 encoded)
+# First encode your service account key: base64 -i service-account-key.json
 docker run --rm \
   -e TOSAGE_VERTEX_AI_ENABLED="true" \
   -e TOSAGE_VERTEX_AI_PROJECT_ID="my-project" \
-  -e TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY='{"type":"service_account",...}' \
+  -e TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY='base64_encoded_json_here' \
   ghcr.io/ca-srg/tosage:latest --vertex-ai
 ```
 

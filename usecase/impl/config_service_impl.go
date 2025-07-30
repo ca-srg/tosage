@@ -62,6 +62,9 @@ func loadConfigWithMigration(configRepo repository.ConfigRepository, migrationSe
 		}
 
 		// マイグレーション成功時は新しい設定を保存
+		logger.Info(ctx, "Attempting to save migrated configuration",
+			domain.NewField("config_path", configRepo.GetConfigPath()),
+			domain.NewField("version", migratedCfg.Version))
 		if err := configRepo.Save(migratedCfg); err != nil {
 			logger.Error(ctx, "Failed to save migrated configuration",
 				domain.NewField("error", err.Error()))

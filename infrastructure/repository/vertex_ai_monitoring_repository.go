@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	"cloud.google.com/go/monitoring/apiv3/v2"
+	monitoring "cloud.google.com/go/monitoring/apiv3/v2"
 	"cloud.google.com/go/monitoring/apiv3/v2/monitoringpb"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
@@ -46,35 +46,36 @@ func NewVertexAIMonitoringRepository(projectID, serviceAccountKeyPath string) (*
 }
 
 // GetUsageMetrics retrieves Vertex AI usage metrics from Cloud Monitoring
-func (r *VertexAIMonitoringRepository) GetUsageMetrics(projectID, location string, start, end time.Time) (*entity.VertexAIUsage, error) {
+func (r *VertexAIMonitoringRepository) GetUsageMetrics(projectID string, start, end time.Time) (*entity.VertexAIUsage, error) {
 	ctx := context.Background()
 
-	log.Printf("[DEBUG] GetUsageMetrics called with projectID=%s, location=%s, start=%v, end=%v",
-		projectID, location, start.Format(time.RFC3339), end.Format(time.RFC3339))
+	log.Printf("[DEBUG] GetUsageMetrics called with projectID=%s, start=%v, end=%v",
+		projectID, start.Format(time.RFC3339), end.Format(time.RFC3339))
 
 	// Debug: List available metrics
-	r.debugListMetrics(ctx, projectID, location, start, end)
+	r.debugListMetrics(ctx, projectID)
 
-	// Get input tokens
-	inputTokens, err := r.getMetricValue(ctx, projectID, "aiplatform.googleapis.com/prediction/input_token_count", location, start, end)
+	// Use the new metric type for token count
+	metricType := "aiplatform.googleapis.com/publisher/online_serving/token_count"
+	
+	// Get input and output tokens separately
+	inputTokens, outputTokens, err := r.getTokenCountByType(ctx, projectID, metricType, start, end)
 	if err != nil {
-		// Log the error but continue with 0
-		log.Printf("[DEBUG] Failed to get input tokens: %v", err)
-		inputTokens = 0
+		return nil, fmt.Errorf("failed to retrieve token count metric: %w", err)
 	}
-
-	// Get output tokens
-	outputTokens, err := r.getMetricValue(ctx, projectID, "aiplatform.googleapis.com/prediction/output_token_count", location, start, end)
-	if err != nil {
-		// Log the error but continue with 0
-		log.Printf("[DEBUG] Failed to get output tokens: %v", err)
-		outputTokens = 0
+	
+	totalTokens := inputTokens + outputTokens
+	if totalTokens == 0 {
+		return nil, fmt.Errorf("no token usage data found for metric %s", metricType)
 	}
+	
+	log.Printf("[DEBUG] Successfully retrieved tokens - input: %f, output: %f, total: %f", inputTokens, outputTokens, totalTokens)
 
 	// Get model-specific metrics
-	modelMetrics, err := r.getModelMetrics(ctx, projectID, location, start, end)
+	modelMetrics, err := r.getModelMetrics(ctx, projectID, start, end)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get model metrics: %w", err)
+		log.Printf("[WARN] Could not get model metrics: %v. Proceeding without model-specific metrics.", err)
+		modelMetrics = []entity.VertexAIModelMetric{}
 	}
 
 	// Calculate estimated cost (simplified - actual cost depends on model pricing)
@@ -86,27 +87,40 @@ func (r *VertexAIMonitoringRepository) GetUsageMetrics(projectID, location strin
 		totalCost,
 		modelMetrics,
 		projectID,
-		location,
+		"", // Empty location since we're not filtering by location
 	)
 }
 
 // GetDailyUsage retrieves aggregated usage for a specific date
-func (r *VertexAIMonitoringRepository) GetDailyUsage(projectID, location string, date time.Time) (*entity.VertexAIUsage, error) {
+func (r *VertexAIMonitoringRepository) GetDailyUsage(projectID string, date time.Time) (*entity.VertexAIUsage, error) {
 	// Convert to JST for consistent date boundaries
 	jst, _ := time.LoadLocation("Asia/Tokyo")
 	startOfDay := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, jst)
-	endOfDay := startOfDay.Add(24 * time.Hour)
+	
+	// Get current time in JST
+	now := time.Now().In(jst)
+	
+	// If the requested date is today, use current time as end time
+	// Otherwise, use end of day
+	var endTime time.Time
+	if startOfDay.Year() == now.Year() && startOfDay.Month() == now.Month() && startOfDay.Day() == now.Day() {
+		endTime = now
+		log.Printf("[DEBUG] GetDailyUsage: Today's usage requested, using current time as end: %v", endTime.Format(time.RFC3339))
+	} else {
+		endTime = startOfDay.Add(24 * time.Hour)
+		log.Printf("[DEBUG] GetDailyUsage: Past date requested, using end of day: %v", endTime.Format(time.RFC3339))
+	}
 
-	return r.GetUsageMetrics(projectID, location, startOfDay, endOfDay)
+	return r.GetUsageMetrics(projectID, startOfDay, endTime)
 }
 
 // GetCurrentMonthUsage retrieves usage for the current month
-func (r *VertexAIMonitoringRepository) GetCurrentMonthUsage(projectID, location string) (*entity.VertexAIUsage, error) {
+func (r *VertexAIMonitoringRepository) GetCurrentMonthUsage(projectID string) (*entity.VertexAIUsage, error) {
 	jst, _ := time.LoadLocation("Asia/Tokyo")
 	now := time.Now().In(jst)
 	startOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, jst)
 
-	return r.GetUsageMetrics(projectID, location, startOfMonth, now)
+	return r.GetUsageMetrics(projectID, startOfMonth, now)
 }
 
 // CheckConnection verifies Google Cloud credentials and Cloud Monitoring access
@@ -129,129 +143,106 @@ func (r *VertexAIMonitoringRepository) CheckConnection() error {
 	return nil
 }
 
-// ListAvailableLocations returns locations with Vertex AI activity
-func (r *VertexAIMonitoringRepository) ListAvailableLocations(projectID string) ([]string, error) {
-	// Common Vertex AI locations
-	locations := []string{
-		"us-central1",
-		"us-east1",
-		"us-west1",
-		"europe-west1",
-		"europe-west4",
-		"asia-northeast1",
-		"asia-southeast1",
-	}
-
-	var activeLocations []string
-	for _, location := range locations {
-		// Check if there are any Vertex AI metrics in this location
-		hasActivity, err := r.checkLocationActivity(projectID, location)
-		if err != nil {
-			continue // Skip locations with errors
-		}
-
-		if hasActivity {
-			activeLocations = append(activeLocations, location)
-		}
-	}
-
-	return activeLocations, nil
-}
-
-// checkLocationActivity checks if there's any Vertex AI activity in a location
-func (r *VertexAIMonitoringRepository) checkLocationActivity(projectID, location string) (bool, error) {
-	ctx := context.Background()
-
-	// Look for recent activity in the last 7 days
-	end := time.Now()
-	start := end.Add(-7 * 24 * time.Hour)
-
-	projectName := fmt.Sprintf("projects/%s", projectID)
-	filter := fmt.Sprintf(`metric.type="aiplatform.googleapis.com/prediction/request_count" AND resource.labels.location="%s"`, location)
-
-	req := &monitoringpb.ListTimeSeriesRequest{
-		Name:   projectName,
-		Filter: filter,
-		Interval: &monitoringpb.TimeInterval{
-			StartTime: timestamppb.New(start),
-			EndTime:   timestamppb.New(end),
-		},
-	}
-
-	it := r.client.ListTimeSeries(ctx, req)
-	_, err := it.Next()
-	if err != nil {
-		if err == iterator.Done {
-			return false, nil // No activity found
-		}
-		return false, err
-	}
-
-	return true, nil // Activity found
-}
 
 // debugListMetrics lists available metrics for debugging
-func (r *VertexAIMonitoringRepository) debugListMetrics(ctx context.Context, projectID, location string, start, end time.Time) {
+func (r *VertexAIMonitoringRepository) debugListMetrics(ctx context.Context, projectID string) {
 	projectName := fmt.Sprintf("projects/%s", projectID)
-	// Try different filters to find metrics
-	filters := []string{
-		fmt.Sprintf(`resource.type=~".*aiplatform.*" AND resource.labels.location="%s"`, location),
-		fmt.Sprintf(`metric.type=~".*aiplatform.*" AND resource.labels.location="%s"`, location),
-		`metric.type=~".*aiplatform.*"`,
-		`resource.type=~".*aiplatform.*"`,
+	
+	// First, list available metric descriptors
+	log.Printf("[DEBUG] Listing available AI Platform metric descriptors...")
+	req := &monitoringpb.ListMetricDescriptorsRequest{
+		Name:   projectName,
+		Filter: `metric.type=starts_with("aiplatform.googleapis.com/")`,
+		PageSize: 100, // Request more results per page
 	}
-
-	for _, filter := range filters {
-		log.Printf("[DEBUG] Trying filter: %s", filter)
-
-		req := &monitoringpb.ListTimeSeriesRequest{
-			Name:   projectName,
-			Filter: filter,
-			Interval: &monitoringpb.TimeInterval{
-				StartTime: timestamppb.New(start),
-				EndTime:   timestamppb.New(end),
-			},
-			View: monitoringpb.ListTimeSeriesRequest_HEADERS,
-		}
-
-		it := r.client.ListTimeSeries(ctx, req)
-		count := 0
+	
+	count := 0
+	pageCount := 0
+	
+	for pageCount < 10 { // Check up to 10 pages
+		it := r.client.ListMetricDescriptors(ctx, req)
+		pageCount++
+		
 		for {
-			ts, err := it.Next()
+			md, err := it.Next()
 			if err == iterator.Done {
 				break
 			}
 			if err != nil {
-				log.Printf("[DEBUG] Error with filter '%s': %v", filter, err)
-				break
+				log.Printf("[DEBUG] Error listing metric descriptors: %v", err)
+				return
 			}
-
-			log.Printf("[DEBUG] Found metric: type=%s, resource.type=%s, resource.labels=%v",
-				ts.Metric.Type, ts.Resource.Type, ts.Resource.Labels)
+			
 			count++
-			if count > 5 {
-				break
+			if count <= 50 || md.Type == "aiplatform.googleapis.com/publisher/online_serving/token_count" {
+				log.Printf("[DEBUG] Found metric descriptor [%d]: %s", count, md.Type)
+			}
+			
+			if md.Type == "aiplatform.googleapis.com/publisher/online_serving/token_count" {
+				log.Printf("[DEBUG] Found target metric at position %d: aiplatform.googleapis.com/publisher/online_serving/token_count", count)
+				log.Printf("[DEBUG] Metric labels: %v", md.Labels)
+				return
 			}
 		}
-
-		if count > 0 {
-			log.Printf("[DEBUG] Found %d metrics with filter: %s", count, filter)
-			return
+		
+		// Get next page token
+		if req.PageToken = it.PageInfo().Token; req.PageToken == "" {
+			break
 		}
 	}
-
-	log.Printf("[DEBUG] No metrics found in any filter for project %s", projectID)
+	
+	log.Printf("[DEBUG] Scanned %d metrics across %d pages", count, pageCount)
+	
+	if count == 0 {
+		log.Printf("[DEBUG] No AI Platform metric descriptors found for project %s", projectID)
+		
+		// Try to list ALL metric descriptors to see what's available
+		log.Printf("[DEBUG] Listing ALL metric descriptors...")
+		req2 := &monitoringpb.ListMetricDescriptorsRequest{
+			Name: projectName,
+		}
+		
+		it2 := r.client.ListMetricDescriptors(ctx, req2)
+		aiplatformCount := 0
+		for {
+			md, err := it2.Next()
+			if err == iterator.Done {
+				break
+			}
+			if err != nil {
+				log.Printf("[DEBUG] Error listing all metric descriptors: %v", err)
+				break
+			}
+			
+			// Check if it's related to AI Platform
+			if vertexAIContains(md.Type, "aiplatform") || vertexAIContains(md.Type, "ml.googleapis.com") {
+				log.Printf("[DEBUG] Found AI-related metric: %s", md.Type)
+				if md.Type == "aiplatform.googleapis.com/publisher/online_serving/token_count" {
+					log.Printf("[DEBUG] Found target metric in general search!")
+				}
+				aiplatformCount++
+			}
+			
+			if aiplatformCount > 20 {
+				break
+			}
+		}
+	}
 }
 
-// getMetricValue retrieves a metric value from Cloud Monitoring
-func (r *VertexAIMonitoringRepository) getMetricValue(
+// getTokenCountByType retrieves input and output token counts separately
+func (r *VertexAIMonitoringRepository) getTokenCountByType(
 	ctx context.Context,
-	projectID, metricType, location string,
+	projectID, metricType string,
 	start, end time.Time,
-) (float64, error) {
+) (float64, float64, error) {
 	projectName := fmt.Sprintf("projects/%s", projectID)
-	// Try both resource types for compatibility
-	filter := fmt.Sprintf(`metric.type="%s" AND (resource.type="aiplatform.googleapis.com/Model" OR resource.type="aiplatform.googleapis.com/PublisherModel") AND resource.labels.location="%s"`, metricType, location)
+	
+	// No filter - get all data for this metric type
+	filter := fmt.Sprintf(`metric.type="%s"`, metricType)
+
+	log.Printf("[DEBUG] Querying metric %s with filter: %s", metricType, filter)
+	log.Printf("[DEBUG] Time range: %v to %v", start.Format(time.RFC3339), end.Format(time.RFC3339))
 
 	req := &monitoringpb.ListTimeSeriesRequest{
 		Name:   projectName,
@@ -262,12 +253,14 @@ func (r *VertexAIMonitoringRepository) getMetricValue(
 		},
 		Aggregation: &monitoringpb.Aggregation{
 			AlignmentPeriod:  durationpb.New(time.Hour), // 1 hour periods
-			PerSeriesAligner: monitoringpb.Aggregation_ALIGN_RATE,
+			PerSeriesAligner: monitoringpb.Aggregation_ALIGN_DELTA,
 		},
 	}
 
 	it := r.client.ListTimeSeries(ctx, req)
-	total := 0.0
+	inputTokens := 0.0
+	outputTokens := 0.0
+	seriesCount := 0
 
 	for {
 		ts, err := it.Next()
@@ -275,31 +268,81 @@ func (r *VertexAIMonitoringRepository) getMetricValue(
 			break
 		}
 		if err != nil {
-			return 0, err
+			log.Printf("[DEBUG] Error querying token count metric %s: %v", metricType, err)
+			return 0, 0, err
 		}
 
+		seriesCount++
+		
+		// Determine if this is input or output tokens based on labels
+		tokenType := ""
+		if ts.Metric != nil && ts.Metric.Labels != nil {
+			if typeLabel, ok := ts.Metric.Labels["type"]; ok {
+				tokenType = typeLabel
+			}
+			log.Printf("[DEBUG] Time series #%d - Metric labels: %v", seriesCount, ts.Metric.Labels)
+		}
+		
+		// Log resource labels
+		if ts.Resource != nil && ts.Resource.Labels != nil {
+			log.Printf("[DEBUG] Time series #%d - Resource labels: %v", seriesCount, ts.Resource.Labels)
+		}
+
+		// Sum points based on token type
+		pointCount := 0
 		for _, point := range ts.Points {
-			if point.Value != nil && point.Value.GetDoubleValue() != 0 {
-				total += point.Value.GetDoubleValue()
+			if point.Value != nil {
+				// Try both double and int64 values
+				var value float64
+				hasValue := false
+				if dv := point.Value.GetDoubleValue(); dv != 0 {
+					value = dv
+					hasValue = true
+				} else if iv := point.Value.GetInt64Value(); iv != 0 {
+					value = float64(iv)
+					hasValue = true
+				} else {
+					// Log even if value is 0 to debug
+					log.Printf("[DEBUG] Time series #%d - Point has zero value (double: %f, int64: %d) at %v", 
+						seriesCount, point.Value.GetDoubleValue(), point.Value.GetInt64Value(), point.Interval.EndTime.AsTime())
+				}
+				
+				if hasValue {
+					switch tokenType {
+					case "input":
+						inputTokens += value
+					case "output":
+						outputTokens += value
+					default:
+						// If type is not specified, assume it's total and split evenly
+						inputTokens += value / 2
+						outputTokens += value / 2
+					}
+					pointCount++
+					log.Printf("[DEBUG] Time series #%d - Point value: %f at %v (type: %s)", seriesCount, value, point.Interval.EndTime.AsTime(), tokenType)
+				}
 			}
 		}
+		log.Printf("[DEBUG] Time series #%d - Points with value: %d, Total points: %d", seriesCount, pointCount, len(ts.Points))
 	}
 
-	return total, nil
+	log.Printf("[DEBUG] Total time series processed: %d, Input tokens: %f, Output tokens: %f", seriesCount, inputTokens, outputTokens)
+	return inputTokens, outputTokens, nil
 }
+
+
 
 // getModelMetrics retrieves model-specific metrics
 func (r *VertexAIMonitoringRepository) getModelMetrics(
 	ctx context.Context,
-	projectID, location string,
+	projectID string,
 	start, end time.Time,
 ) ([]entity.VertexAIModelMetric, error) {
-	projectName := fmt.Sprintf("projects/%s", projectID)
-
 	// Get all unique model IDs
-	modelIDs, err := r.getUniqueModelIDs(ctx, projectName, location, start, end)
+	modelIDs, err := r.getAvailableModelsForLocation(ctx, projectID)
 	if err != nil {
-		return nil, err
+		log.Printf("[WARN] Could not get available models: %v. Proceeding without model-specific metrics.", err)
+		return []entity.VertexAIModelMetric{}, nil
 	}
 
 	var metrics []entity.VertexAIModelMetric
@@ -309,25 +352,25 @@ func (r *VertexAIMonitoringRepository) getModelMetrics(
 		}
 
 		// Get input tokens for this model
-		inputTokens, err := r.getModelMetricValue(ctx, projectName, "aiplatform.googleapis.com/prediction/input_token_count", modelID, location, start, end)
+		inputTokens, err := r.getModelMetricValue(ctx, fmt.Sprintf("projects/%s", r.projectID), "aiplatform.googleapis.com/prediction/input_token_count", modelID, start, end)
 		if err == nil {
 			metric.InputTokens = int64(inputTokens)
 		}
 
 		// Get output tokens for this model
-		outputTokens, err := r.getModelMetricValue(ctx, projectName, "aiplatform.googleapis.com/prediction/output_token_count", modelID, location, start, end)
+		outputTokens, err := r.getModelMetricValue(ctx, fmt.Sprintf("projects/%s", r.projectID), "aiplatform.googleapis.com/prediction/output_token_count", modelID, start, end)
 		if err == nil {
 			metric.OutputTokens = int64(outputTokens)
 		}
 
 		// Get request count for this model
-		requestCount, err := r.getModelMetricValue(ctx, projectName, "aiplatform.googleapis.com/prediction/request_count", modelID, location, start, end)
+		requestCount, err := r.getModelMetricValue(ctx, fmt.Sprintf("projects/%s", r.projectID), "aiplatform.googleapis.com/prediction/request_count", modelID, start, end)
 		if err == nil {
 			metric.RequestCount = int64(requestCount)
 		}
 
 		// Get latency for this model
-		latency, err := r.getModelMetricValue(ctx, projectName, "aiplatform.googleapis.com/prediction/response_latencies", modelID, location, start, end)
+		latency, err := r.getModelMetricValue(ctx, fmt.Sprintf("projects/%s", r.projectID), "aiplatform.googleapis.com/prediction/response_latencies", modelID, start, end)
 		if err == nil {
 			metric.LatencyMs = latency
 		}
@@ -341,13 +384,20 @@ func (r *VertexAIMonitoringRepository) getModelMetrics(
 	return metrics, nil
 }
 
+// getAvailableModelsForLocation retrieves available publisher models.
+func (r *VertexAIMonitoringRepository) getAvailableModelsForLocation(ctx context.Context, projectID string) ([]string, error) {
+	// Try to get model information from actual usage metrics instead of REST API
+	// since the publisher models endpoint seems to be unavailable
+	return r.getUniqueModelIDs(ctx, fmt.Sprintf("projects/%s", projectID), time.Now().Add(-7*24*time.Hour), time.Now())
+}
+
 // getUniqueModelIDs retrieves unique model IDs from metrics
 func (r *VertexAIMonitoringRepository) getUniqueModelIDs(
 	ctx context.Context,
-	projectName, location string,
+	projectName string,
 	start, end time.Time,
 ) ([]string, error) {
-	filter := fmt.Sprintf(`metric.type="aiplatform.googleapis.com/prediction/request_count" AND resource.labels.location="%s"`, location)
+	filter := `metric.type="aiplatform.googleapis.com/prediction/request_count"`
 
 	req := &monitoringpb.ListTimeSeriesRequest{
 		Name:   projectName,
@@ -389,10 +439,10 @@ func (r *VertexAIMonitoringRepository) getUniqueModelIDs(
 // getModelMetricValue retrieves a metric value for a specific model
 func (r *VertexAIMonitoringRepository) getModelMetricValue(
 	ctx context.Context,
-	projectName, metricType, modelID, location string,
+	projectName, metricType, modelID string,
 	start, end time.Time,
 ) (float64, error) {
-	filter := fmt.Sprintf(`metric.type="%s" AND resource.labels.model_id="%s" AND resource.labels.location="%s"`, metricType, modelID, location)
+	filter := fmt.Sprintf(`metric.type="%s" AND resource.labels.model_id="%s"`, metricType, modelID)
 
 	req := &monitoringpb.ListTimeSeriesRequest{
 		Name:   projectName,

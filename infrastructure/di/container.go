@@ -102,11 +102,13 @@ func NewContainer(opts ...ContainerOption) (*Container, error) {
 	}
 
 	// Debug: Log container state
-	if container.bedrockEnabled {
-		fmt.Fprintf(os.Stderr, "Debug: Bedrock is enabled via command line flag\n")
-	}
-	if container.vertexAIEnabled {
-		fmt.Fprintf(os.Stderr, "Debug: Vertex AI is enabled via command line flag\n")
+	if container.debugMode {
+		if container.bedrockEnabled {
+			fmt.Fprintf(os.Stderr, "Debug: Bedrock is enabled via command line flag\n")
+		}
+		if container.vertexAIEnabled {
+			fmt.Fprintf(os.Stderr, "Debug: Vertex AI is enabled via command line flag\n")
+		}
 	}
 
 	// Load configuration
@@ -242,7 +244,6 @@ func (c *Container) initConfig() error {
 			cfg.VertexAI = &config.VertexAIConfig{
 				Enabled:               true,
 				ProjectID:             os.Getenv("GOOGLE_CLOUD_PROJECT"), // Try to get from environment
-				Locations:             []string{"us-central1", "us-east1", "asia-northeast1"},
 				ServiceAccountKeyPath: "",
 				CollectionIntervalSec: 900,
 			}
@@ -386,7 +387,7 @@ func (c *Container) initRepositories() error {
 				}
 			} else {
 				// Create REST repository with authenticator
-				vertexAIRepo, err := infraRepo.NewVertexAIRESTRepository(c.config.VertexAI.ProjectID, authenticator)
+				_, err := infraRepo.NewVertexAIRESTRepository(c.config.VertexAI.ProjectID, authenticator)
 				if err != nil {
 					// Log warning but don't fail initialization
 					c.logger.Warn(context.TODO(), "Failed to initialize Vertex AI repository", domain.NewField("error", err.Error()))
@@ -397,20 +398,23 @@ func (c *Container) initRepositories() error {
 					if c.debugMode {
 						c.logger.Debug(context.TODO(), "Vertex AI repository initialization details",
 							domain.NewField("project_id", c.config.VertexAI.ProjectID),
-							domain.NewField("locations", c.config.VertexAI.Locations),
 							domain.NewField("error_type", fmt.Sprintf("%T", err)),
 							domain.NewField("error_details", err.Error()))
-						fmt.Fprintf(os.Stderr, "Debug: Locations: %v\n", c.config.VertexAI.Locations)
-					}
-				} else {
-					c.vertexAIRepo = vertexAIRepo
-					c.logger.Info(context.TODO(), "Vertex AI REST repository initialized with retry logic",
-						domain.NewField("project_id", c.config.VertexAI.ProjectID),
-						domain.NewField("locations", c.config.VertexAI.Locations))
-				}
-			}
-		}
-	}
+                    }
+                } else {
+                    vertexAIMonitoringRepo, err := infraRepo.NewVertexAIMonitoringRepository(c.config.VertexAI.ProjectID, c.config.VertexAI.ServiceAccountKeyPath)
+                    if err != nil {
+                        c.logger.Warn(context.TODO(), "Failed to initialize Vertex AI Monitoring repository", domain.NewField("error", err.Error()))
+                        fmt.Fprintf(os.Stderr, "Warning: Failed to initialize Vertex AI Monitoring repository: %v\n", err)
+                    } else {
+                        c.vertexAIRepo = vertexAIMonitoringRepo
+                        c.logger.Info(context.TODO(), "Vertex AI Monitoring repository initialized",
+                            domain.NewField("project_id", c.config.VertexAI.ProjectID))
+                    }
+                }
+            }
+        }
+    }
 
 	// Initialize CSV writer repository
 	c.csvWriterRepo = infraRepo.NewCSVWriterRepository(c.CreateLogger("csv-writer"))
@@ -457,12 +461,11 @@ func (c *Container) initUseCases() error {
 		vertexAIConfig := &repository.VertexAIConfig{
 			Enabled:               c.config.VertexAI.Enabled,
 			ProjectID:             c.config.VertexAI.ProjectID,
-			Locations:             c.config.VertexAI.Locations,
 			ServiceAccountKeyPath: c.config.VertexAI.ServiceAccountKeyPath,
 			ServiceAccountKey:     c.config.VertexAI.ServiceAccountKey,
 			CollectionInterval:    time.Duration(c.config.VertexAI.CollectionIntervalSec) * time.Second,
 		}
-		c.vertexAIService = impl.NewVertexAIService(c.vertexAIRepo, vertexAIConfig)
+		c.vertexAIService = impl.NewVertexAIService(c.vertexAIRepo, c.vertexAIRepo, vertexAIConfig)
 	}
 
 	// Initialize Restart manager
