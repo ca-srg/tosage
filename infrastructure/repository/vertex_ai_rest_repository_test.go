@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/oauth2"
 )
 
 // MockVertexAIAuthenticator is a mock implementation of VertexAIAuthenticator
@@ -31,6 +32,14 @@ func (m *MockVertexAIAuthenticator) ValidateCredentials() error {
 func (m *MockVertexAIAuthenticator) IsUsingADC() bool {
 	args := m.Called()
 	return args.Bool(0)
+}
+
+func (m *MockVertexAIAuthenticator) GetTokenSource() oauth2.TokenSource {
+	args := m.Called()
+	if tokenSource := args.Get(0); tokenSource != nil {
+		return tokenSource.(oauth2.TokenSource)
+	}
+	return nil
 }
 
 func TestVertexAIRESTRepository_NewRepository(t *testing.T) {
