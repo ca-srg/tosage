@@ -402,7 +402,7 @@ func (c *Container) initRepositories() error {
 							domain.NewField("error_details", err.Error()))
                     }
                 } else {
-                    vertexAIMonitoringRepo, err := infraRepo.NewVertexAIMonitoringRepository(c.config.VertexAI.ProjectID, c.config.VertexAI.ServiceAccountKeyPath)
+                    vertexAIMonitoringRepo, err := infraRepo.NewVertexAIMonitoringRepository(c.config.VertexAI.ProjectID, authenticator)
                     if err != nil {
                         c.logger.Warn(context.TODO(), "Failed to initialize Vertex AI Monitoring repository", domain.NewField("error", err.Error()))
                         fmt.Fprintf(os.Stderr, "Warning: Failed to initialize Vertex AI Monitoring repository: %v\n", err)

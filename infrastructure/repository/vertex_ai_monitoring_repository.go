@@ -15,22 +15,24 @@ import (
 
 	"github.com/ca-srg/tosage/domain/entity"
 	"github.com/ca-srg/tosage/domain/repository"
+	"github.com/ca-srg/tosage/infrastructure/auth"
 )
 
 // VertexAIMonitoringRepository implements VertexAIRepository using Google Cloud Monitoring
 type VertexAIMonitoringRepository struct {
-	client                *monitoring.MetricClient
-	projectID             string
-	serviceAccountKeyPath string
+	client        *monitoring.MetricClient
+	projectID     string
+	authenticator auth.VertexAIAuthenticator
 }
 
 // NewVertexAIMonitoringRepository creates a new Vertex AI Monitoring repository
-func NewVertexAIMonitoringRepository(projectID, serviceAccountKeyPath string) (*VertexAIMonitoringRepository, error) {
+func NewVertexAIMonitoringRepository(projectID string, authenticator auth.VertexAIAuthenticator) (*VertexAIMonitoringRepository, error) {
 	ctx := context.Background()
 
 	var opts []option.ClientOption
-	if serviceAccountKeyPath != "" {
-		opts = append(opts, option.WithCredentialsFile(serviceAccountKeyPath))
+	if authenticator != nil {
+		// Use the token source from the authenticator
+		opts = append(opts, option.WithTokenSource(authenticator.GetTokenSource()))
 	}
 
 	client, err := monitoring.NewMetricClient(ctx, opts...)
@@ -39,9 +41,9 @@ func NewVertexAIMonitoringRepository(projectID, serviceAccountKeyPath string) (*
 	}
 
 	return &VertexAIMonitoringRepository{
-		client:                client,
-		projectID:             projectID,
-		serviceAccountKeyPath: serviceAccountKeyPath,
+		client:        client,
+		projectID:     projectID,
+		authenticator: authenticator,
 	}, nil
 }
 
