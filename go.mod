@@ -15,7 +15,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.29
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/oauth2 v0.30.0
-	google.golang.org/api v0.243.0
+	google.golang.org/api v0.244.0
 	google.golang.org/protobuf v1.36.6
 )
 
