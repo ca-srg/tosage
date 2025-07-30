@@ -167,7 +167,11 @@ func (r *VertexAIRESTRepository) callTokenCountAPI(ctx context.Context, location
 			time.Sleep(backoffDelay)
 			continue
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				log.Printf("[DEBUG] Failed to close response body: %v", err)
+			}
+		}()
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {

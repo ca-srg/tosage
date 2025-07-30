@@ -320,13 +320,21 @@ func TestSendGaugeMetric_401Error(t *testing.T) {
 
 	// Set test password in environment
 	testPassword := "test-password-123"
-	os.Setenv("TOSAGE_PROMETHEUS_REMOTE_WRITE_PASSWORD", testPassword)
-	defer os.Unsetenv("TOSAGE_PROMETHEUS_REMOTE_WRITE_PASSWORD")
+	if err := os.Setenv("TOSAGE_PROMETHEUS_REMOTE_WRITE_PASSWORD", testPassword); err != nil {
+		t.Fatalf("failed to set environment variable: %v", err)
+	}
+	defer func() {
+		if err := os.Unsetenv("TOSAGE_PROMETHEUS_REMOTE_WRITE_PASSWORD"); err != nil {
+			t.Logf("failed to unset environment variable: %v", err)
+		}
+	}()
 
 	// Create test server that returns 401
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte(`{"status":"error","error":"authentication error: invalid token"}`))
+		if _, err := w.Write([]byte(`{"status":"error","error":"authentication error: invalid token"}`)); err != nil {
+			t.Logf("failed to write response: %v", err)
+		}
 	}))
 	defer server.Close()
 
@@ -349,12 +357,16 @@ func TestSendGaugeMetric_401Error(t *testing.T) {
 	}
 
 	// Close writer and restore stderr
-	w.Close()
+	if err := w.Close(); err != nil {
+		t.Logf("failed to close writer: %v", err)
+	}
 	os.Stderr = oldStderr
 
 	// Read captured output
 	var buf bytes.Buffer
-	buf.ReadFrom(r)
+	if _, err := buf.ReadFrom(r); err != nil {
+		t.Logf("failed to read from reader: %v", err)
+	}
 	output := buf.String()
 
 	// Check that password was logged
