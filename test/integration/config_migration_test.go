@@ -115,6 +115,8 @@ func TestConfigMigration_EndToEnd(t *testing.T) {
 			builder := di.NewContainerBuilder().
 				WithConfigRepository(configRepo)
 
+			// Capture logs during container build to see what's happening
+			t.Logf("Building container with config at: %s", configPath)
 			container, err := builder.Build()
 			if err != nil {
 				if tt.expectError {
@@ -126,6 +128,15 @@ func TestConfigMigration_EndToEnd(t *testing.T) {
 			// Get the loaded config
 			configService := container.GetConfigService()
 			loadedConfig := configService.GetConfig()
+			
+			// Debug: Print loaded config
+			t.Logf("Loaded config version: %d", loadedConfig.Version)
+			if loadedConfig.Prometheus != nil {
+				t.Logf("Loaded RemoteWriteUsername: %s", loadedConfig.Prometheus.RemoteWriteUsername)
+				t.Logf("Loaded RemoteWritePassword: %s", loadedConfig.Prometheus.RemoteWritePassword)
+				t.Logf("Loaded Username: %s", loadedConfig.Prometheus.Username)
+				t.Logf("Loaded Password: %s", loadedConfig.Prometheus.Password)
+			}
 
 			// Verify migration happened correctly
 			if loadedConfig.Version != tt.expectedConfig.Version {
@@ -136,10 +147,29 @@ func TestConfigMigration_EndToEnd(t *testing.T) {
 			// Wait a moment to ensure file write is complete
 			time.Sleep(100 * time.Millisecond)
 
+			// Debug: Check config file path
+			t.Logf("Config file path: %s", configRepo.GetConfigPath())
+			
+			// Read the raw config file to see what was actually saved
+			rawData, err := os.ReadFile(configPath)
+			if err != nil {
+				t.Fatalf("Failed to read raw config file: %v", err)
+			}
+			t.Logf("Raw config file contents:\n%s", string(rawData))
+			
 			// Verify the config was saved with migration
 			savedConfig, err := configRepo.Load()
 			if err != nil {
 				t.Fatalf("Failed to load saved config: %v", err)
+			}
+			
+			// Debug: Print saved config
+			t.Logf("Saved config version: %d", savedConfig.Version)
+			if savedConfig.Prometheus != nil {
+				t.Logf("Saved RemoteWriteUsername: %s", savedConfig.Prometheus.RemoteWriteUsername)
+				t.Logf("Saved RemoteWritePassword: %s", savedConfig.Prometheus.RemoteWritePassword)
+				t.Logf("Saved Username: %s", savedConfig.Prometheus.Username)
+				t.Logf("Saved Password: %s", savedConfig.Prometheus.Password)
 			}
 
 			if savedConfig.Version != tt.expectedConfig.Version {

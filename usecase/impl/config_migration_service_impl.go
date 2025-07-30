@@ -175,7 +175,6 @@ func (s *ConfigMigrationServiceImpl) copyConfig(src *config.AppConfig) *config.A
 		dst.VertexAI = &config.VertexAIConfig{
 			Enabled:               src.VertexAI.Enabled,
 			ProjectID:             src.VertexAI.ProjectID,
-			Locations:             append([]string{}, src.VertexAI.Locations...),
 			ServiceAccountKeyPath: src.VertexAI.ServiceAccountKeyPath,
 			CollectionIntervalSec: src.VertexAI.CollectionIntervalSec,
 		}

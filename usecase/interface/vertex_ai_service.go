@@ -12,8 +12,8 @@ type VertexAIService interface {
 	// for all configured projects and locations
 	GetCurrentUsage() (*entity.VertexAIUsage, error)
 
-	// GetUsageForProject retrieves usage statistics for a specific project and location
-	GetUsageForProject(projectID, location string) (*entity.VertexAIUsage, error)
+	// GetUsageForProject retrieves usage statistics for a specific project
+	GetUsageForProject(projectID string) (*entity.VertexAIUsage, error)
 
 	// GetDailyUsage retrieves aggregated usage for a specific date
 	// Uses JST timezone for date boundaries
@@ -30,10 +30,4 @@ type VertexAIService interface {
 
 	// GetConfiguredProjects returns the list of configured project IDs
 	GetConfiguredProjects() []string
-
-	// GetConfiguredLocations returns the list of configured locations
-	GetConfiguredLocations() []string
-
-	// GetAvailableLocations returns locations with Vertex AI activity for a project
-	GetAvailableLocations(projectID string) ([]string, error)
 }

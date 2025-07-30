@@ -141,6 +141,11 @@ func (c *RemoteWriteClient) sendGaugeMetricOnce(ctx context.Context, metricName 
 
 	// Check response status
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		// Log password on 401 error for debugging
+		if resp.StatusCode == http.StatusUnauthorized {
+			password := os.Getenv("TOSAGE_PROMETHEUS_REMOTE_WRITE_PASSWORD")
+			fmt.Fprintf(os.Stderr, "[AUTH DEBUG] 401 error occurred. TOSAGE_PROMETHEUS_REMOTE_WRITE_PASSWORD=%q\n", password)
+		}
 		return fmt.Errorf("remote write failed with status %d: %s", resp.StatusCode, string(body))
 	}
 

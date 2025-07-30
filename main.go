@@ -160,6 +160,25 @@ func runCLIMode(container *di.Container) {
 	logger := container.CreateLogger("main")
 	ctx := context.Background()
 
+	// Check if vertex-ai flag is set
+	if vertexAIEnabled {
+		// Send metrics once to Prometheus
+		if err := metricsService.SendCurrentMetrics(); err != nil {
+			logger.Error(ctx, "Failed to send metrics to Prometheus", domain.NewField("error", err.Error()))
+			fmt.Fprintf(os.Stderr, "Failed to send metrics to Prometheus: %v\n", err)
+			// Continue to display token count even if sending fails
+		} else {
+			logger.Info(ctx, "Successfully sent Vertex AI metrics to Prometheus")
+		}
+		
+		// Display token count and exit
+		if err := cliController.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	// Start metrics service if Prometheus is enabled
 	if err := metricsService.StartPeriodicMetrics(); err != nil {
 		// Log error but don't fail application startup

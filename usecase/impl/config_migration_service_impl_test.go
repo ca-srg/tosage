@@ -242,7 +242,6 @@ func TestConfigMigrationServiceImpl_CopyConfig(t *testing.T) {
 		VertexAI: &config.VertexAIConfig{
 			Enabled:               true,
 			ProjectID:             "test-project",
-			Locations:             []string{"us-central1"},
 			ServiceAccountKeyPath: "/path/to/key.json",
 			CollectionIntervalSec: 900,
 		},

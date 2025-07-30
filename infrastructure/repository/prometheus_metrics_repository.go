@@ -69,18 +69,19 @@ func NewPrometheusMetricsRepository(cfg *config.PrometheusConfig) (repository.Me
 
 // SendTokenMetric sends the total token count metric to Prometheus
 func (r *PrometheusMetricsRepository) SendTokenMetric(totalTokens int, hostLabel string, metricName string) error {
-	// Use provided hostLabel or fall back to configured one
-	if hostLabel == "" {
-		hostLabel = r.hostLabel
-	}
-
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(r.config.TimeoutSec)*time.Second)
 	defer cancel()
 
 	// Create labels for the metric
-	labels := map[string]string{
-		"host": hostLabel,
+	labels := map[string]string{}
+	
+	// Only add host label if it's not empty (don't use default if explicitly passed as empty)
+	if hostLabel != "" {
+		labels["host"] = hostLabel
+	} else if metricName == "tosage_cc_token" || metricName == "tosage_cursor_token" {
+		// For CC and Cursor metrics, use default host label if not provided
+		labels["host"] = r.hostLabel
 	}
 
 	// Send metric via Remote Write
@@ -97,21 +98,23 @@ func (r *PrometheusMetricsRepository) SendTokenMetric(totalTokens int, hostLabel
 
 // SendTokenMetricWithTimezone sends the total token count metric with timezone information
 func (r *PrometheusMetricsRepository) SendTokenMetricWithTimezone(totalTokens int, hostLabel string, metricName string, timezoneInfo repository.TimezoneInfo) error {
-	// Use provided hostLabel or fall back to configured one
-	if hostLabel == "" {
-		hostLabel = r.hostLabel
-	}
-
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(r.config.TimeoutSec)*time.Second)
 	defer cancel()
 
 	// Create labels for the metric including timezone information
 	labels := map[string]string{
-		"host":             hostLabel,
 		"timezone":         timezoneInfo.Name,
 		"timezone_offset":  timezoneInfo.Offset,
 		"detection_method": timezoneInfo.DetectionMethod,
+	}
+	
+	// Only add host label if it's not empty (don't use default if explicitly passed as empty)
+	if hostLabel != "" {
+		labels["host"] = hostLabel
+	} else if metricName == "tosage_cc_token" || metricName == "tosage_cursor_token" {
+		// For CC and Cursor metrics, use default host label if not provided
+		labels["host"] = r.hostLabel
 	}
 
 	// Send metric via Remote Write

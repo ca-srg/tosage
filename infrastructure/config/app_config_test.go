@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"os"
 	"testing"
@@ -26,9 +27,10 @@ func TestVertexAIConfig_EnvironmentVariable(t *testing.T) {
 		_ = os.Setenv("TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY_PATH", originalPath)
 	}()
 
-	// Test service account key from environment
+	// Test service account key from environment (base64 encoded)
 	testKey := `{"type":"service_account","project_id":"test-project"}`
-	_ = os.Setenv("TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY", testKey)
+	base64Key := base64.StdEncoding.EncodeToString([]byte(testKey))
+	_ = os.Setenv("TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY", base64Key)
 	_ = os.Setenv("TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY_PATH", "/path/to/key.json")
 
 	config := DefaultConfig()
@@ -47,7 +49,6 @@ func TestVertexAIConfig_Validation(t *testing.T) {
 		serviceAccountKey string
 		enabled           bool
 		projectID         string
-		locations         []string
 		wantErr           bool
 		errMsg            string
 	}{
@@ -56,7 +57,6 @@ func TestVertexAIConfig_Validation(t *testing.T) {
 			serviceAccountKey: "",
 			enabled:           true,
 			projectID:         "test-project",
-			locations:         []string{"us-central1"},
 			wantErr:           false,
 		},
 		{
@@ -70,7 +70,6 @@ func TestVertexAIConfig_Validation(t *testing.T) {
 			}`,
 			enabled:   true,
 			projectID: "test-project",
-			locations: []string{"us-central1"},
 			wantErr:   false,
 		},
 		{
@@ -78,7 +77,6 @@ func TestVertexAIConfig_Validation(t *testing.T) {
 			serviceAccountKey: "not-json",
 			enabled:           true,
 			projectID:         "test-project",
-			locations:         []string{"us-central1"},
 			wantErr:           true,
 			errMsg:            "invalid service account key JSON",
 		},
@@ -90,7 +88,6 @@ func TestVertexAIConfig_Validation(t *testing.T) {
 			}`,
 			enabled:   true,
 			projectID: "test-project",
-			locations: []string{"us-central1"},
 			wantErr:   true,
 			errMsg:    "service account key missing required field",
 		},
@@ -105,7 +102,6 @@ func TestVertexAIConfig_Validation(t *testing.T) {
 			}`,
 			enabled:   true,
 			projectID: "test-project",
-			locations: []string{"us-central1"},
 			wantErr:   true,
 			errMsg:    "service account key must have type 'service_account'",
 		},
@@ -114,7 +110,6 @@ func TestVertexAIConfig_Validation(t *testing.T) {
 			serviceAccountKey: "invalid-json", // Service account key is still validated even when disabled
 			enabled:           false,
 			projectID:         "test-project",
-			locations:         []string{"us-central1"},
 			wantErr:           true,
 			errMsg:            "invalid service account key JSON",
 		},
@@ -123,7 +118,6 @@ func TestVertexAIConfig_Validation(t *testing.T) {
 			serviceAccountKey: "", // No validation when no key is provided
 			enabled:           false,
 			projectID:         "",
-			locations:         []string{},
 			wantErr:           false,
 		},
 	}
@@ -134,7 +128,6 @@ func TestVertexAIConfig_Validation(t *testing.T) {
 				VertexAI: &VertexAIConfig{
 					Enabled:               tt.enabled,
 					ProjectID:             tt.projectID,
-					Locations:             tt.locations,
 					ServiceAccountKey:     tt.serviceAccountKey,
 					CollectionIntervalSec: 600,
 				},
@@ -170,7 +163,9 @@ func TestVertexAIConfig_EnvironmentTracking(t *testing.T) {
 	_ = os.Setenv("TOSAGE_VERTEX_AI_ENABLED", "true")
 	_ = os.Setenv("TOSAGE_VERTEX_AI_PROJECT_ID", "my-project")
 	_ = os.Setenv("TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY_PATH", "/path/to/key.json")
-	_ = os.Setenv("TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY", `{"type":"service_account"}`)
+	// Base64 encode the service account key
+	encodedKey := base64.StdEncoding.EncodeToString([]byte(`{"type":"service_account"}`))
+	_ = os.Setenv("TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY", encodedKey)
 	_ = os.Setenv("TOSAGE_VERTEX_AI_COLLECTION_INTERVAL_SECONDS", "900")
 
 	config := DefaultConfig()
@@ -200,7 +195,6 @@ func TestVertexAIConfig_JSONMerge(t *testing.T) {
 		VertexAI: &VertexAIConfig{
 			Enabled:               true,
 			ProjectID:             "json-project",
-			Locations:             []string{"asia-northeast1"},
 			ServiceAccountKeyPath: "/json/path/key.json",
 			ServiceAccountKey:     `{"type":"service_account","project_id":"json-project"}`,
 			CollectionIntervalSec: 1200,
@@ -212,7 +206,6 @@ func TestVertexAIConfig_JSONMerge(t *testing.T) {
 	// Check that values were merged
 	assert.True(t, baseConfig.VertexAI.Enabled)
 	assert.Equal(t, "json-project", baseConfig.VertexAI.ProjectID)
-	assert.Equal(t, []string{"asia-northeast1"}, baseConfig.VertexAI.Locations)
 	assert.Equal(t, "/json/path/key.json", baseConfig.VertexAI.ServiceAccountKeyPath)
 	assert.Equal(t, `{"type":"service_account","project_id":"json-project"}`, baseConfig.VertexAI.ServiceAccountKey)
 	assert.Equal(t, 1200, baseConfig.VertexAI.CollectionIntervalSec)
@@ -220,7 +213,6 @@ func TestVertexAIConfig_JSONMerge(t *testing.T) {
 	// Check that sources were updated
 	assert.Equal(t, SourceJSONFile, baseConfig.ConfigSources["VertexAI.Enabled"])
 	assert.Equal(t, SourceJSONFile, baseConfig.ConfigSources["VertexAI.ProjectID"])
-	assert.Equal(t, SourceJSONFile, baseConfig.ConfigSources["VertexAI.Locations"])
 	assert.Equal(t, SourceJSONFile, baseConfig.ConfigSources["VertexAI.ServiceAccountKeyPath"])
 	assert.Equal(t, SourceJSONFile, baseConfig.ConfigSources["VertexAI.ServiceAccountKey"])
 	assert.Equal(t, SourceJSONFile, baseConfig.ConfigSources["VertexAI.CollectionIntervalSec"])
@@ -266,7 +258,6 @@ func TestVertexAIConfig_CompleteValidation(t *testing.T) {
 		VertexAI: &VertexAIConfig{
 			Enabled:               true,
 			ProjectID:             "my-test-project",
-			Locations:             []string{"us-central1", "asia-northeast1"},
 			ServiceAccountKeyPath: "",
 			ServiceAccountKey:     validKey,
 			CollectionIntervalSec: 600,

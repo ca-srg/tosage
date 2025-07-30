@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"encoding/base64"
 	"os"
 	"testing"
 
@@ -193,10 +194,11 @@ func TestVertexAIAuthentication_EndToEnd(t *testing.T) {
 		t.Skip("TEST_VERTEX_AI_SERVICE_ACCOUNT_KEY or TEST_VERTEX_AI_PROJECT_ID not set, skipping integration test")
 	}
 
-	// Set up environment variables
+	// Set up environment variables (with base64 encoded key)
 	_ = os.Setenv("TOSAGE_VERTEX_AI_ENABLED", "true")
 	_ = os.Setenv("TOSAGE_VERTEX_AI_PROJECT_ID", projectID)
-	_ = os.Setenv("TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY", serviceAccountKey)
+	base64Key := base64.StdEncoding.EncodeToString([]byte(serviceAccountKey))
+	_ = os.Setenv("TOSAGE_VERTEX_AI_SERVICE_ACCOUNT_KEY", base64Key)
 	defer func() {
 		_ = os.Unsetenv("TOSAGE_VERTEX_AI_ENABLED")
 		_ = os.Unsetenv("TOSAGE_VERTEX_AI_PROJECT_ID")

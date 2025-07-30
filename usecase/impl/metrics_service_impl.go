@@ -229,17 +229,17 @@ func (s *MetricsServiceImpl) sendMetrics() error {
 				timezoneInfo := s.timezoneService.GetTimezoneInfo()
 
 				// Send input tokens
-				if err := s.metricsRepo.SendTokenMetricWithTimezone(int(bedrockUsage.InputTokens()), s.config.HostLabel, "tosage_bedrock_input_token", timezoneInfo); err != nil {
+				if err := s.metricsRepo.SendTokenMetricWithTimezone(int(bedrockUsage.InputTokens()), "", "tosage_bedrock_input_token", timezoneInfo); err != nil {
 					s.logger.Warn(ctx, "Failed to send Bedrock input token metrics", domain.NewField("error", err.Error()))
 				}
 
 				// Send output tokens
-				if err := s.metricsRepo.SendTokenMetricWithTimezone(int(bedrockUsage.OutputTokens()), s.config.HostLabel, "tosage_bedrock_output_token", timezoneInfo); err != nil {
+				if err := s.metricsRepo.SendTokenMetricWithTimezone(int(bedrockUsage.OutputTokens()), "", "tosage_bedrock_output_token", timezoneInfo); err != nil {
 					s.logger.Warn(ctx, "Failed to send Bedrock output token metrics", domain.NewField("error", err.Error()))
 				}
 
 				// Send total tokens
-				if err := s.metricsRepo.SendTokenMetricWithTimezone(int(bedrockUsage.TotalTokens()), s.config.HostLabel, "tosage_bedrock_total_token", timezoneInfo); err != nil {
+				if err := s.metricsRepo.SendTokenMetricWithTimezone(int(bedrockUsage.TotalTokens()), "", "tosage_bedrock_total_token", timezoneInfo); err != nil {
 					s.logger.Warn(ctx, "Failed to send Bedrock total token metrics", domain.NewField("error", err.Error()))
 				} else {
 					s.logger.Info(ctx, "Successfully sent Bedrock metrics",
@@ -251,13 +251,13 @@ func (s *MetricsServiceImpl) sendMetrics() error {
 				}
 			} else {
 				// Fall back to sending without timezone information
-				if err := s.metricsRepo.SendTokenMetric(int(bedrockUsage.InputTokens()), s.config.HostLabel, "tosage_bedrock_input_token"); err != nil {
+				if err := s.metricsRepo.SendTokenMetric(int(bedrockUsage.InputTokens()), "", "tosage_bedrock_input_token"); err != nil {
 					s.logger.Warn(ctx, "Failed to send Bedrock input token metrics", domain.NewField("error", err.Error()))
 				}
-				if err := s.metricsRepo.SendTokenMetric(int(bedrockUsage.OutputTokens()), s.config.HostLabel, "tosage_bedrock_output_token"); err != nil {
+				if err := s.metricsRepo.SendTokenMetric(int(bedrockUsage.OutputTokens()), "", "tosage_bedrock_output_token"); err != nil {
 					s.logger.Warn(ctx, "Failed to send Bedrock output token metrics", domain.NewField("error", err.Error()))
 				}
-				if err := s.metricsRepo.SendTokenMetric(int(bedrockUsage.TotalTokens()), s.config.HostLabel, "tosage_bedrock_total_token"); err != nil {
+				if err := s.metricsRepo.SendTokenMetric(int(bedrockUsage.TotalTokens()), "", "tosage_bedrock_total_token"); err != nil {
 					s.logger.Warn(ctx, "Failed to send Bedrock total token metrics", domain.NewField("error", err.Error()))
 				} else {
 					s.logger.Info(ctx, "Successfully sent Bedrock metrics",
@@ -294,17 +294,17 @@ func (s *MetricsServiceImpl) sendMetrics() error {
 					timezoneInfo := s.timezoneService.GetTimezoneInfo()
 
 					// Send input tokens
-					if err := s.metricsRepo.SendTokenMetricWithTimezone(int(vertexAIUsage.InputTokens()), s.config.HostLabel, "tosage_vertex_ai_input_token", timezoneInfo); err != nil {
+					if err := s.metricsRepo.SendTokenMetricWithTimezone(int(vertexAIUsage.InputTokens()), "", "tosage_vertex_ai_input_token", timezoneInfo); err != nil {
 						s.logger.Warn(ctx, "Failed to send Vertex AI input token metrics", domain.NewField("error", err.Error()))
 					}
 
 					// Send output tokens
-					if err := s.metricsRepo.SendTokenMetricWithTimezone(int(vertexAIUsage.OutputTokens()), s.config.HostLabel, "tosage_vertex_ai_output_token", timezoneInfo); err != nil {
+					if err := s.metricsRepo.SendTokenMetricWithTimezone(int(vertexAIUsage.OutputTokens()), "", "tosage_vertex_ai_output_token", timezoneInfo); err != nil {
 						s.logger.Warn(ctx, "Failed to send Vertex AI output token metrics", domain.NewField("error", err.Error()))
 					}
 
 					// Send total tokens
-					if err := s.metricsRepo.SendTokenMetricWithTimezone(int(vertexAIUsage.TotalTokens()), s.config.HostLabel, "tosage_vertex_ai_total_token", timezoneInfo); err != nil {
+					if err := s.metricsRepo.SendTokenMetricWithTimezone(int(vertexAIUsage.TotalTokens()), "", "tosage_vertex_ai_total_token", timezoneInfo); err != nil {
 						s.logger.Warn(ctx, "Failed to send Vertex AI total token metrics", domain.NewField("error", err.Error()))
 					} else {
 						s.logger.Info(ctx, "Successfully sent Vertex AI metrics",
@@ -316,13 +316,13 @@ func (s *MetricsServiceImpl) sendMetrics() error {
 					}
 				} else {
 					// Fall back to sending without timezone information
-					if err := s.metricsRepo.SendTokenMetric(int(vertexAIUsage.InputTokens()), s.config.HostLabel, "tosage_vertex_ai_input_token"); err != nil {
+					if err := s.metricsRepo.SendTokenMetric(int(vertexAIUsage.InputTokens()), "", "tosage_vertex_ai_input_token"); err != nil {
 						s.logger.Warn(ctx, "Failed to send Vertex AI input token metrics", domain.NewField("error", err.Error()))
 					}
-					if err := s.metricsRepo.SendTokenMetric(int(vertexAIUsage.OutputTokens()), s.config.HostLabel, "tosage_vertex_ai_output_token"); err != nil {
+					if err := s.metricsRepo.SendTokenMetric(int(vertexAIUsage.OutputTokens()), "", "tosage_vertex_ai_output_token"); err != nil {
 						s.logger.Warn(ctx, "Failed to send Vertex AI output token metrics", domain.NewField("error", err.Error()))
 					}
-					if err := s.metricsRepo.SendTokenMetric(int(vertexAIUsage.TotalTokens()), s.config.HostLabel, "tosage_vertex_ai_total_token"); err != nil {
+					if err := s.metricsRepo.SendTokenMetric(int(vertexAIUsage.TotalTokens()), "", "tosage_vertex_ai_total_token"); err != nil {
 						s.logger.Warn(ctx, "Failed to send Vertex AI total token metrics", domain.NewField("error", err.Error()))
 					} else {
 						s.logger.Info(ctx, "Successfully sent Vertex AI metrics",
