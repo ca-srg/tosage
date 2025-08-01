@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -85,6 +86,28 @@ func TestConfigMigration_EndToEnd(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Save and clear TOSAGE environment variables
+			tosageEnvVars := make(map[string]string)
+			for _, env := range os.Environ() {
+				if strings.HasPrefix(env, "TOSAGE_") {
+					parts := strings.SplitN(env, "=", 2)
+					if len(parts) == 2 {
+						tosageEnvVars[parts[0]] = parts[1]
+						if err := os.Unsetenv(parts[0]); err != nil {
+							t.Logf("Failed to unset environment variable %s: %v", parts[0], err)
+						}
+					}
+				}
+			}
+			// Restore environment variables after test
+			defer func() {
+				for key, value := range tosageEnvVars {
+					if err := os.Setenv(key, value); err != nil {
+						t.Logf("Failed to restore environment variable %s: %v", key, err)
+					}
+				}
+			}()
+			
 			// Create temp directory for test
 			tempDir, err := os.MkdirTemp("", "tosage-migration-test-*")
 			if err != nil {

@@ -43,6 +43,7 @@ type usageResponse struct {
 	GPT432K struct {
 		NumRequests     int  `json:"numRequests"`
 		MaxRequestUsage *int `json:"maxRequestUsage"`
+		NumTokens       int  `json:"numTokens"`
 	} `json:"gpt-4-32k"`
 	StartOfMonth string `json:"startOfMonth"`
 }
@@ -84,20 +85,26 @@ type monthlyInvoiceResponse struct {
 	HasUnpaidMidMonthInvoice bool `json:"hasUnpaidMidMonthInvoice"`
 }
 
-type aggregatedUsageEventsResponse struct {
-	Aggregations []struct {
-		ModelIntent      string  `json:"modelIntent"`
-		InputTokens      string  `json:"inputTokens"`
-		OutputTokens     string  `json:"outputTokens"`
-		CacheWriteTokens string  `json:"cacheWriteTokens"`
-		CacheReadTokens  string  `json:"cacheReadTokens"`
-		TotalCents       float64 `json:"totalCents"`
-	} `json:"aggregations"`
-	TotalInputTokens      string  `json:"totalInputTokens"`
-	TotalOutputTokens     string  `json:"totalOutputTokens"`
-	TotalCacheWriteTokens string  `json:"totalCacheWriteTokens"`
-	TotalCacheReadTokens  string  `json:"totalCacheReadTokens"`
-	TotalCostCents        float64 `json:"totalCostCents"`
+type filteredUsageEventsResponse struct {
+	TotalUsageEventsCount int `json:"totalUsageEventsCount"`
+	UsageEventsDisplay    []struct {
+		Timestamp        string  `json:"timestamp"`
+		Model            string  `json:"model"`
+		Kind             string  `json:"kind"`
+		MaxMode          bool    `json:"maxMode"`
+		RequestsCosts    float64 `json:"requestsCosts"`
+		UsageBasedCosts  string  `json:"usageBasedCosts"`
+		IsTokenBasedCall bool    `json:"isTokenBasedCall"`
+		TokenUsage       struct {
+			InputTokens      int     `json:"inputTokens"`
+			OutputTokens     int     `json:"outputTokens"`
+			CacheWriteTokens int     `json:"cacheWriteTokens"`
+			CacheReadTokens  int     `json:"cacheReadTokens"`
+			TotalCents       float64 `json:"totalCents"`
+		} `json:"tokenUsage"`
+		OwningUser string `json:"owningUser"`
+		OwningTeam string `json:"owningTeam"`
+	} `json:"usageEventsDisplay"`
 }
 
 type hardLimitResponse struct {
@@ -197,9 +204,12 @@ func (r *CursorAPIRepository) CheckUsageBasedStatus(token *valueobject.CursorTok
 
 // checkTeamMembership checks if the user is a team member
 func (r *CursorAPIRepository) checkTeamMembership(token *valueobject.CursorToken) (*entity.TeamInfo, error) {
-	// Get team list
+	fmt.Printf("[DEBUG] checkTeamMembership: starting team check\n")
+	
+	// Get team list - send empty JSON object
 	resp, err := r.makeAPIRequest(token, "POST", "/api/dashboard/teams", map[string]interface{}{})
 	if err != nil {
+		fmt.Printf("[DEBUG] checkTeamMembership: teams API failed: %v\n", err)
 		return nil, err
 	}
 	defer func() {
@@ -208,7 +218,13 @@ func (r *CursorAPIRepository) checkTeamMembership(token *valueobject.CursorToken
 
 	var teams teamResponse
 	if err := json.NewDecoder(resp.Body).Decode(&teams); err != nil {
+		fmt.Printf("[DEBUG] checkTeamMembership: failed to decode teams response: %v\n", err)
 		return nil, domain.ErrCursorAPIWithCause("decode teams response", err)
+	}
+	
+	fmt.Printf("[DEBUG] checkTeamMembership: found %d teams\n", len(teams.Teams))
+	for i, team := range teams.Teams {
+		fmt.Printf("[DEBUG] Team[%d]: ID=%d, Name=%s, Role=%s\n", i, team.ID, team.Name, team.Role)
 	}
 
 	if len(teams.Teams) == 0 {
@@ -221,6 +237,7 @@ func (r *CursorAPIRepository) checkTeamMembership(token *valueobject.CursorToken
 		"teamId": teamID,
 	})
 	if err != nil {
+		fmt.Printf("[DEBUG] checkTeamMembership: team details API failed: %v\n", err)
 		return nil, err
 	}
 	defer func() {
@@ -229,8 +246,11 @@ func (r *CursorAPIRepository) checkTeamMembership(token *valueobject.CursorToken
 
 	var teamDetails teamMemberResponse
 	if err := json.NewDecoder(resp.Body).Decode(&teamDetails); err != nil {
+		fmt.Printf("[DEBUG] checkTeamMembership: failed to decode team details: %v\n", err)
 		return nil, domain.ErrCursorAPIWithCause("decode team details", err)
 	}
+	
+	fmt.Printf("[DEBUG] checkTeamMembership: userID=%d\n", teamDetails.UserID)
 
 	return &entity.TeamInfo{
 		TeamID:   teamID,
@@ -514,8 +534,14 @@ func (r *CursorAPIRepository) makeAPIRequest(token *valueobject.CursorToken, met
 		return nil, domain.ErrCursorAPIWithCause("create request", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	req.Header.Set("Cookie", fmt.Sprintf("WorkosCursorSessionToken=%s", token.SessionToken()))
+	
+	// Add Origin and Referer headers to pass CSRF check
+	req.Header.Set("Origin", "https://cursor.com")
+	req.Header.Set("Referer", "https://cursor.com/")
 
 	resp, err := r.httpClient.Do(req)
 	if err != nil {
@@ -525,6 +551,7 @@ func (r *CursorAPIRepository) makeAPIRequest(token *valueobject.CursorToken, met
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
+		fmt.Printf("[DEBUG] API request failed: path=%s, status=%d, body=%s\n", path, resp.StatusCode, string(body))
 		return nil, domain.ErrCursorAPI(path, resp.StatusCode, string(body))
 	}
 
@@ -536,76 +563,133 @@ func isAlphaNumeric(b byte) bool {
 	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')
 }
 
-// GetAggregatedTokenUsage retrieves aggregated token usage from JST 00:00 to current time
+// GetAggregatedTokenUsage retrieves aggregated token usage from 00:00 to current time in the machine's timezone
 func (r *CursorAPIRepository) GetAggregatedTokenUsage(token *valueobject.CursorToken) (int64, error) {
-	// Get JST location
-	jst, err := time.LoadLocation("Asia/Tokyo")
-	if err != nil {
-		return 0, domain.ErrCursorAPIWithCause("load JST timezone", err)
-	}
+	// Get current time in the machine's local timezone
+	now := time.Now()
 
-	// Get current time in JST
-	now := time.Now().In(jst)
-
-	// Calculate JST 00:00 today
-	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, jst)
+	// Calculate 00:00 today in the local timezone
+	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 
 	// Convert to milliseconds for API
 	startDate := startOfDay.UnixMilli()
 	endDate := now.UnixMilli()
-
-	// First check if user is a team member to determine the correct teamId
-	teamInfo, _ := r.checkTeamMembership(token)
 	
-	// Set teamId based on membership status
-	teamId := -1 // Default for individual users
-	if teamInfo != nil && teamInfo.TeamID > 0 {
-		teamId = teamInfo.TeamID
+	fmt.Printf("[DEBUG] GetAggregatedTokenUsage: startDate=%v, endDate=%v, timezone=%v\n", 
+		startOfDay.Format("2006-01-02 15:04:05"), 
+		now.Format("2006-01-02 15:04:05"), 
+		now.Location())
+
+	// Check if user is a team member
+	teamInfo, err := r.checkTeamMembership(token)
+	if err != nil {
+		// If team check fails, return 0 (not an error)
+		fmt.Printf("[DEBUG] Team membership check failed: %v\n", err)
+		return 0, nil
 	}
+
+	// If not a team member, return 0
+	if teamInfo == nil || teamInfo.TeamID == 0 {
+		fmt.Printf("[DEBUG] Not a team member (teamInfo=%v)\n", teamInfo)
+		return 0, nil
+	}
+	
+	fmt.Printf("[DEBUG] Team member detected: teamID=%d, userID=%d\n", teamInfo.TeamID, teamInfo.UserID)
 
 	// Create request payload
 	payload := map[string]interface{}{
-		"teamId":    teamId,
-		"startDate": startDate,
-		"endDate":   endDate,
+		"teamId":    teamInfo.TeamID,
+		"startDate": strconv.FormatInt(startDate, 10),
+		"endDate":   strconv.FormatInt(endDate, 10),
+		"userId":    teamInfo.UserID,
+		"page":      1,
+		"pageSize":  100,
 	}
+	
+	fmt.Printf("[DEBUG] API request payload: %v\n", payload)
 
-	// Make API request
-	resp, err := r.makeAPIRequest(token, "POST", "/api/dashboard/get-aggregated-usage-events", payload)
-	if err != nil {
-		// This API might not be available for all users or might be deprecated
-		// Return 0 instead of error to allow the application to continue
-		return 0, nil
-	}
-	defer func() {
-		_ = resp.Body.Close()
-	}()
-
-	// Decode response
-	var usageResp aggregatedUsageEventsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&usageResp); err != nil {
-		return 0, domain.ErrCursorAPIWithCause("decode aggregated usage response", err)
-	}
-
-	// Calculate total tokens
 	totalTokens := int64(0)
+	page := 1
+	totalEvents := 0
+	eventsWithTokens := 0
 
-	// Parse and sum all token types
-	if inputTokens, err := strconv.ParseInt(usageResp.TotalInputTokens, 10, 64); err == nil {
-		totalTokens += inputTokens
-	}
+	// Paginate through all results
+	for {
+		payload["page"] = page
 
-	if outputTokens, err := strconv.ParseInt(usageResp.TotalOutputTokens, 10, 64); err == nil {
-		totalTokens += outputTokens
-	}
+		// Make API request
+		resp, err := r.makeAPIRequest(token, "POST", "/api/dashboard/get-filtered-usage-events", payload)
+		if err != nil {
+			// If API fails, return 0 (not an error)
+			fmt.Printf("[DEBUG] API request failed: %v\n", err)
+			return 0, nil
+		}
 
-	if cacheWriteTokens, err := strconv.ParseInt(usageResp.TotalCacheWriteTokens, 10, 64); err == nil {
-		totalTokens += cacheWriteTokens
-	}
+		// Decode response
+		var usageResp filteredUsageEventsResponse
+		if err := json.NewDecoder(resp.Body).Decode(&usageResp); err != nil {
+			_ = resp.Body.Close()
+			fmt.Printf("[DEBUG] Failed to decode response: %v\n", err)
+			return 0, domain.ErrCursorAPIWithCause("decode filtered usage events", err)
+		}
+		_ = resp.Body.Close()
+		
+		fmt.Printf("[DEBUG] Page %d: total events=%d, events in response=%d\n", 
+			page, usageResp.TotalUsageEventsCount, len(usageResp.UsageEventsDisplay))
 
-	if cacheReadTokens, err := strconv.ParseInt(usageResp.TotalCacheReadTokens, 10, 64); err == nil {
-		totalTokens += cacheReadTokens
+		// Process each usage event
+		for _, event := range usageResp.UsageEventsDisplay {
+			// Parse timestamp
+			timestamp, err := strconv.ParseInt(event.Timestamp, 10, 64)
+			if err != nil {
+				fmt.Printf("[DEBUG] Failed to parse timestamp '%s': %v\n", event.Timestamp, err)
+				continue
+			}
+
+			// Convert to time
+			eventTime := time.UnixMilli(timestamp)
+
+			// Check if event is within today's range
+			if eventTime.Before(startOfDay) || eventTime.After(now) {
+				fmt.Printf("[DEBUG] Event outside time range: %v (model=%s)\n", 
+					eventTime.Format("2006-01-02 15:04:05"), event.Model)
+				continue
+			}
+			
+			totalEvents++
+
+			// Sum all token types from tokenUsage
+			if event.IsTokenBasedCall {
+				eventTokens := int64(event.TokenUsage.InputTokens) + 
+					int64(event.TokenUsage.OutputTokens) + 
+					int64(event.TokenUsage.CacheWriteTokens) + 
+					int64(event.TokenUsage.CacheReadTokens)
+				
+				if eventTokens > 0 {
+					eventsWithTokens++
+					totalTokens += eventTokens
+					fmt.Printf("[DEBUG] Event with tokens: model=%s, time=%v, tokens=%d (in=%d, out=%d, cw=%d, cr=%d)\n",
+						event.Model,
+						eventTime.Format("15:04:05"),
+						eventTokens,
+						event.TokenUsage.InputTokens,
+						event.TokenUsage.OutputTokens,
+						event.TokenUsage.CacheWriteTokens,
+						event.TokenUsage.CacheReadTokens)
+				}
+			}
+		}
+
+		// Check if we need to fetch more pages
+		if len(usageResp.UsageEventsDisplay) < 100 {
+			break
+		}
+
+		page++
 	}
+	
+	fmt.Printf("[DEBUG] Total: events=%d, eventsWithTokens=%d, totalTokens=%d\n", 
+		totalEvents, eventsWithTokens, totalTokens)
 
 	return totalTokens, nil
 }

@@ -222,7 +222,9 @@ func (c *Container) initConfig() error {
 
 	// Override Bedrock enabled state if set via command line
 	if c.bedrockEnabled {
-		fmt.Fprintf(os.Stderr, "Debug: Setting up Bedrock configuration\n")
+		if c.debugMode {
+			fmt.Fprintf(os.Stderr, "Debug: Setting up Bedrock configuration\n")
+		}
 		if cfg.Bedrock == nil {
 			cfg.Bedrock = &config.BedrockConfig{
 				Enabled:               true,
@@ -231,10 +233,14 @@ func (c *Container) initConfig() error {
 				AssumeRoleARN:         "",
 				CollectionIntervalSec: 900,
 			}
-			fmt.Fprintf(os.Stderr, "Debug: Created new Bedrock config\n")
+			if c.debugMode {
+				fmt.Fprintf(os.Stderr, "Debug: Created new Bedrock config\n")
+			}
 		} else {
 			cfg.Bedrock.Enabled = true
-			fmt.Fprintf(os.Stderr, "Debug: Updated existing Bedrock config\n")
+			if c.debugMode {
+				fmt.Fprintf(os.Stderr, "Debug: Updated existing Bedrock config\n")
+			}
 		}
 	}
 
@@ -292,10 +298,14 @@ func (c *Container) initLogging() error {
 func (c *Container) initRepositories() error {
 	// Debug: Log repository initialization
 	if c.debugMode {
-		fmt.Fprintf(os.Stderr, "Debug: Starting repository initialization\n")
-		fmt.Fprintf(os.Stderr, "Debug: bedrockEnabled=%v, vertexAIEnabled=%v\n", c.bedrockEnabled, c.vertexAIEnabled)
+		if c.debugMode {
+			fmt.Fprintf(os.Stderr, "Debug: Starting repository initialization\n")
+			fmt.Fprintf(os.Stderr, "Debug: bedrockEnabled=%v, vertexAIEnabled=%v\n", c.bedrockEnabled, c.vertexAIEnabled)
+		}
 		if c.config.Bedrock != nil {
-			fmt.Fprintf(os.Stderr, "Debug: Bedrock config exists, enabled=%v\n", c.config.Bedrock.Enabled)
+			if c.debugMode {
+				fmt.Fprintf(os.Stderr, "Debug: Bedrock config exists, enabled=%v\n", c.config.Bedrock.Enabled)
+			}
 		}
 	}
 	// Initialize usage repository only if Bedrock and Vertex AI are not enabled
@@ -322,7 +332,9 @@ func (c *Container) initRepositories() error {
 
 	// Initialize Bedrock repository if enabled
 	if c.config.Bedrock != nil && c.config.Bedrock.Enabled {
-		fmt.Fprintf(os.Stderr, "Debug: Attempting to initialize Bedrock repository\n")
+		if c.debugMode {
+			fmt.Fprintf(os.Stderr, "Debug: Attempting to initialize Bedrock repository\n")
+		}
 		bedrockRepo, err := infraRepo.NewBedrockCloudWatchRepository(c.config.Bedrock.AWSProfile)
 		if err != nil {
 			// Log warning but don't fail initialization
@@ -343,7 +355,9 @@ func (c *Container) initRepositories() error {
 			}
 		} else {
 			c.bedrockRepo = bedrockRepo
-			fmt.Fprintf(os.Stderr, "Debug: Bedrock repository initialized successfully\n")
+			if c.debugMode {
+				fmt.Fprintf(os.Stderr, "Debug: Bedrock repository initialized successfully\n")
+			}
 		}
 	} else {
 		if c.debugMode {
@@ -517,10 +531,14 @@ func (c *Container) initControllers() error {
 // initPrometheus initializes Prometheus components
 func (c *Container) initPrometheus() error {
 	if c.debugMode {
-		fmt.Fprintf(os.Stderr, "Debug: initPrometheus called, Prometheus config nil: %v\n", c.config.Prometheus == nil)
+		if c.debugMode {
+			fmt.Fprintf(os.Stderr, "Debug: initPrometheus called, Prometheus config nil: %v\n", c.config.Prometheus == nil)
+		}
 		if c.config.Prometheus != nil {
-			fmt.Fprintf(os.Stderr, "Debug: Current RemoteWriteURL: '%s'\n", c.config.Prometheus.RemoteWriteURL)
-			fmt.Fprintf(os.Stderr, "Debug: Current IntervalSec: %d\n", c.config.Prometheus.IntervalSec)
+			if c.debugMode {
+				fmt.Fprintf(os.Stderr, "Debug: Current RemoteWriteURL: '%s'\n", c.config.Prometheus.RemoteWriteURL)
+				fmt.Fprintf(os.Stderr, "Debug: Current IntervalSec: %d\n", c.config.Prometheus.IntervalSec)
+			}
 		}
 	}
 
@@ -528,8 +546,10 @@ func (c *Container) initPrometheus() error {
 	// This should not happen if config is loaded properly
 	if c.config.Prometheus == nil {
 		if c.debugMode {
-			fmt.Fprintf(os.Stderr, "Debug: ERROR - Prometheus config is nil after config loading!\n")
-			fmt.Fprintf(os.Stderr, "Debug: This indicates a bug in config initialization\n")
+			if c.debugMode {
+				fmt.Fprintf(os.Stderr, "Debug: ERROR - Prometheus config is nil after config loading!\n")
+				fmt.Fprintf(os.Stderr, "Debug: This indicates a bug in config initialization\n")
+			}
 		}
 		// Create emergency config to prevent panic
 		// This should never happen in normal operation
@@ -540,13 +560,17 @@ func (c *Container) initPrometheus() error {
 	// If RemoteWriteURL is empty, use NoOpMetricsRepository
 	if c.config.Prometheus.RemoteWriteURL == "" {
 		if c.debugMode {
-			fmt.Fprintf(os.Stderr, "Debug: Prometheus RemoteWriteURL is empty, using NoOpMetricsRepository\n")
-			fmt.Fprintf(os.Stderr, "Debug: ENV check - TOSAGE_PROMETHEUS_REMOTE_WRITE_URL='%s'\n", os.Getenv("TOSAGE_PROMETHEUS_REMOTE_WRITE_URL"))
+			if c.debugMode {
+				fmt.Fprintf(os.Stderr, "Debug: Prometheus RemoteWriteURL is empty, using NoOpMetricsRepository\n")
+				fmt.Fprintf(os.Stderr, "Debug: ENV check - TOSAGE_PROMETHEUS_REMOTE_WRITE_URL='%s'\n", os.Getenv("TOSAGE_PROMETHEUS_REMOTE_WRITE_URL"))
+			}
 		}
 		c.metricsRepo = infraRepo.NewNoOpMetricsRepository()
 	} else {
 		if c.debugMode {
-			fmt.Fprintf(os.Stderr, "Debug: Creating PrometheusMetricsRepository with URL: %s\n", c.config.Prometheus.RemoteWriteURL)
+			if c.debugMode {
+				fmt.Fprintf(os.Stderr, "Debug: Creating PrometheusMetricsRepository with URL: %s\n", c.config.Prometheus.RemoteWriteURL)
+			}
 		}
 		metricsRepo, err := infraRepo.NewPrometheusMetricsRepository(c.config.Prometheus)
 		if err != nil {
@@ -554,7 +578,9 @@ func (c *Container) initPrometheus() error {
 		}
 		c.metricsRepo = metricsRepo
 		if c.debugMode {
-			fmt.Fprintf(os.Stderr, "Debug: PrometheusMetricsRepository created successfully\n")
+			if c.debugMode {
+				fmt.Fprintf(os.Stderr, "Debug: PrometheusMetricsRepository created successfully\n")
+			}
 		}
 	}
 
