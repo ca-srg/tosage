@@ -204,12 +204,10 @@ func (r *CursorAPIRepository) CheckUsageBasedStatus(token *valueobject.CursorTok
 
 // checkTeamMembership checks if the user is a team member
 func (r *CursorAPIRepository) checkTeamMembership(token *valueobject.CursorToken) (*entity.TeamInfo, error) {
-	fmt.Printf("[DEBUG] checkTeamMembership: starting team check\n")
 	
 	// Get team list - send empty JSON object
 	resp, err := r.makeAPIRequest(token, "POST", "/api/dashboard/teams", map[string]interface{}{})
 	if err != nil {
-		fmt.Printf("[DEBUG] checkTeamMembership: teams API failed: %v\n", err)
 		return nil, err
 	}
 	defer func() {
@@ -218,14 +216,9 @@ func (r *CursorAPIRepository) checkTeamMembership(token *valueobject.CursorToken
 
 	var teams teamResponse
 	if err := json.NewDecoder(resp.Body).Decode(&teams); err != nil {
-		fmt.Printf("[DEBUG] checkTeamMembership: failed to decode teams response: %v\n", err)
 		return nil, domain.ErrCursorAPIWithCause("decode teams response", err)
 	}
 	
-	fmt.Printf("[DEBUG] checkTeamMembership: found %d teams\n", len(teams.Teams))
-	for i, team := range teams.Teams {
-		fmt.Printf("[DEBUG] Team[%d]: ID=%d, Name=%s, Role=%s\n", i, team.ID, team.Name, team.Role)
-	}
 
 	if len(teams.Teams) == 0 {
 		return nil, nil // Not a team member
@@ -237,7 +230,6 @@ func (r *CursorAPIRepository) checkTeamMembership(token *valueobject.CursorToken
 		"teamId": teamID,
 	})
 	if err != nil {
-		fmt.Printf("[DEBUG] checkTeamMembership: team details API failed: %v\n", err)
 		return nil, err
 	}
 	defer func() {
@@ -246,11 +238,9 @@ func (r *CursorAPIRepository) checkTeamMembership(token *valueobject.CursorToken
 
 	var teamDetails teamMemberResponse
 	if err := json.NewDecoder(resp.Body).Decode(&teamDetails); err != nil {
-		fmt.Printf("[DEBUG] checkTeamMembership: failed to decode team details: %v\n", err)
 		return nil, domain.ErrCursorAPIWithCause("decode team details", err)
 	}
 	
-	fmt.Printf("[DEBUG] checkTeamMembership: userID=%d\n", teamDetails.UserID)
 
 	return &entity.TeamInfo{
 		TeamID:   teamID,
@@ -551,7 +541,6 @@ func (r *CursorAPIRepository) makeAPIRequest(token *valueobject.CursorToken, met
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
-		fmt.Printf("[DEBUG] API request failed: path=%s, status=%d, body=%s\n", path, resp.StatusCode, string(body))
 		return nil, domain.ErrCursorAPI(path, resp.StatusCode, string(body))
 	}
 
@@ -575,26 +564,19 @@ func (r *CursorAPIRepository) GetAggregatedTokenUsage(token *valueobject.CursorT
 	startDate := startOfDay.UnixMilli()
 	endDate := now.UnixMilli()
 	
-	fmt.Printf("[DEBUG] GetAggregatedTokenUsage: startDate=%v, endDate=%v, timezone=%v\n", 
-		startOfDay.Format("2006-01-02 15:04:05"), 
-		now.Format("2006-01-02 15:04:05"), 
-		now.Location())
 
 	// Check if user is a team member
 	teamInfo, err := r.checkTeamMembership(token)
 	if err != nil {
 		// If team check fails, return 0 (not an error)
-		fmt.Printf("[DEBUG] Team membership check failed: %v\n", err)
 		return 0, nil
 	}
 
 	// If not a team member, return 0
 	if teamInfo == nil || teamInfo.TeamID == 0 {
-		fmt.Printf("[DEBUG] Not a team member (teamInfo=%v)\n", teamInfo)
 		return 0, nil
 	}
 	
-	fmt.Printf("[DEBUG] Team member detected: teamID=%d, userID=%d\n", teamInfo.TeamID, teamInfo.UserID)
 
 	// Create request payload
 	payload := map[string]interface{}{
@@ -606,7 +588,6 @@ func (r *CursorAPIRepository) GetAggregatedTokenUsage(token *valueobject.CursorT
 		"pageSize":  100,
 	}
 	
-	fmt.Printf("[DEBUG] API request payload: %v\n", payload)
 
 	totalTokens := int64(0)
 	page := 1
@@ -621,7 +602,6 @@ func (r *CursorAPIRepository) GetAggregatedTokenUsage(token *valueobject.CursorT
 		resp, err := r.makeAPIRequest(token, "POST", "/api/dashboard/get-filtered-usage-events", payload)
 		if err != nil {
 			// If API fails, return 0 (not an error)
-			fmt.Printf("[DEBUG] API request failed: %v\n", err)
 			return 0, nil
 		}
 
@@ -629,20 +609,16 @@ func (r *CursorAPIRepository) GetAggregatedTokenUsage(token *valueobject.CursorT
 		var usageResp filteredUsageEventsResponse
 		if err := json.NewDecoder(resp.Body).Decode(&usageResp); err != nil {
 			_ = resp.Body.Close()
-			fmt.Printf("[DEBUG] Failed to decode response: %v\n", err)
 			return 0, domain.ErrCursorAPIWithCause("decode filtered usage events", err)
 		}
 		_ = resp.Body.Close()
 		
-		fmt.Printf("[DEBUG] Page %d: total events=%d, events in response=%d\n", 
-			page, usageResp.TotalUsageEventsCount, len(usageResp.UsageEventsDisplay))
 
 		// Process each usage event
 		for _, event := range usageResp.UsageEventsDisplay {
 			// Parse timestamp
 			timestamp, err := strconv.ParseInt(event.Timestamp, 10, 64)
 			if err != nil {
-				fmt.Printf("[DEBUG] Failed to parse timestamp '%s': %v\n", event.Timestamp, err)
 				continue
 			}
 
@@ -651,8 +627,6 @@ func (r *CursorAPIRepository) GetAggregatedTokenUsage(token *valueobject.CursorT
 
 			// Check if event is within today's range
 			if eventTime.Before(startOfDay) || eventTime.After(now) {
-				fmt.Printf("[DEBUG] Event outside time range: %v (model=%s)\n", 
-					eventTime.Format("2006-01-02 15:04:05"), event.Model)
 				continue
 			}
 			
@@ -668,14 +642,6 @@ func (r *CursorAPIRepository) GetAggregatedTokenUsage(token *valueobject.CursorT
 				if eventTokens > 0 {
 					eventsWithTokens++
 					totalTokens += eventTokens
-					fmt.Printf("[DEBUG] Event with tokens: model=%s, time=%v, tokens=%d (in=%d, out=%d, cw=%d, cr=%d)\n",
-						event.Model,
-						eventTime.Format("15:04:05"),
-						eventTokens,
-						event.TokenUsage.InputTokens,
-						event.TokenUsage.OutputTokens,
-						event.TokenUsage.CacheWriteTokens,
-						event.TokenUsage.CacheReadTokens)
 				}
 			}
 		}
@@ -688,8 +654,6 @@ func (r *CursorAPIRepository) GetAggregatedTokenUsage(token *valueobject.CursorT
 		page++
 	}
 	
-	fmt.Printf("[DEBUG] Total: events=%d, eventsWithTokens=%d, totalTokens=%d\n", 
-		totalEvents, eventsWithTokens, totalTokens)
 
 	return totalTokens, nil
 }

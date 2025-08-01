@@ -99,12 +99,10 @@ func (r *VertexAIRESTRepository) getAccessToken(ctx context.Context) (string, er
 func (r *VertexAIRESTRepository) ListPublisherModels(ctx context.Context, location string) ([]string, error) {
 	// Return models based on location-specific availability
 	// This helps avoid unnecessary 404 errors for models not available in certain regions
-	log.Printf("[DEBUG] Getting models for location %s", location)
 
 	// Get location-specific models
 	geminiModels := GetAvailableModelsForLocation(location)
 
-	log.Printf("[DEBUG] Returning %d models for location %s: %v", len(geminiModels), location, geminiModels)
 	return geminiModels, nil
 }
 
@@ -131,13 +129,11 @@ func (r *VertexAIRESTRepository) callTokenCountAPI(ctx context.Context, location
 
 	var lastErr error
 	for attempt := 1; attempt <= r.maxRetries; attempt++ {
-		log.Printf("[DEBUG] Attempt %d/%d to call Vertex AI token count API for model %s", attempt, r.maxRetries, model)
 
 		// Get fresh token for each attempt
 		token, err := r.getAccessToken(ctx)
 		if err != nil {
 			lastErr = fmt.Errorf("authentication failed: %w", err)
-			log.Printf("[DEBUG] Failed to get access token: %v", lastErr)
 			// Use exponential backoff for retries
 			backoffDelay := r.retryDelay * time.Duration(1<<uint(attempt-1))
 			if backoffDelay > 30*time.Second {
@@ -158,7 +154,6 @@ func (r *VertexAIRESTRepository) callTokenCountAPI(ctx context.Context, location
 		resp, err := r.client.Do(req)
 		if err != nil {
 			lastErr = fmt.Errorf("network error: %w", err)
-			log.Printf("[DEBUG] Request failed: %v", lastErr)
 			// Use exponential backoff for retries
 			backoffDelay := r.retryDelay * time.Duration(1<<uint(attempt-1))
 			if backoffDelay > 30*time.Second {
@@ -169,14 +164,12 @@ func (r *VertexAIRESTRepository) callTokenCountAPI(ctx context.Context, location
 		}
 		defer func() {
 			if err := resp.Body.Close(); err != nil {
-				log.Printf("[DEBUG] Failed to close response body: %v", err)
 			}
 		}()
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			lastErr = fmt.Errorf("failed to read response: %w", err)
-			log.Printf("[DEBUG] Failed to read response: %v", lastErr)
 			// Use exponential backoff for retries
 			backoffDelay := r.retryDelay * time.Duration(1<<uint(attempt-1))
 			if backoffDelay > 30*time.Second {
@@ -191,7 +184,6 @@ func (r *VertexAIRESTRepository) callTokenCountAPI(ctx context.Context, location
 			var tokenResp TokenCountResponse
 			if err := json.Unmarshal(body, &tokenResp); err != nil {
 				lastErr = fmt.Errorf("failed to parse response: %w", err)
-				log.Printf("[DEBUG] Failed to parse response: %v", lastErr)
 				// Use exponential backoff for retries
 				backoffDelay := r.retryDelay * time.Duration(1<<uint(attempt-1))
 				if backoffDelay > 30*time.Second {
@@ -200,18 +192,14 @@ func (r *VertexAIRESTRepository) callTokenCountAPI(ctx context.Context, location
 				time.Sleep(backoffDelay)
 				continue
 			}
-			log.Printf("[DEBUG] Successfully got token count: %d", tokenResp.TotalTokens)
 			return tokenResp.TotalTokens, nil
 		}
 
 		// Parse error response
 		var errResp ErrorResponse
 		if err := json.Unmarshal(body, &errResp); err != nil {
-			log.Printf("[DEBUG] Failed to parse error response body: %s", string(body))
 			lastErr = fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
 		} else {
-			log.Printf("[DEBUG] API error: %s (code: %d, status: %s)",
-				errResp.Error.Message, errResp.Error.Code, errResp.Error.Status)
 			lastErr = fmt.Errorf("API error: %s (code: %d)", errResp.Error.Message, errResp.Error.Code)
 		}
 
@@ -219,13 +207,11 @@ func (r *VertexAIRESTRepository) callTokenCountAPI(ctx context.Context, location
 		switch resp.StatusCode {
 		case http.StatusNotFound:
 			// Model not found - non-retryable
-			log.Printf("[DEBUG] Model %s not found (404) in location %s. Not retrying.", model, location)
 			return 0, fmt.Errorf("model '%s' not found: Publisher Model `projects/%s/locations/%s/publishers/google/models/%s` was not found or your project does not have access to it",
 				model, r.projectID, location, model)
 
 		case http.StatusForbidden:
 			// Permission denied - non-retryable
-			log.Printf("[DEBUG] Permission denied (403) for model %s. Not retrying.", model)
 			permissionErr := fmt.Errorf("permission denied: Missing permission 'aiplatform.endpoints.predict' for model '%s'. "+
 				"Grant the service account '%s' the 'Vertex AI User' role using: "+
 				"gcloud projects add-iam-policy-binding %s --member='serviceAccount:%s' --role='roles/aiplatform.user'",
@@ -241,7 +227,6 @@ func (r *VertexAIRESTRepository) callTokenCountAPI(ctx context.Context, location
 
 		case http.StatusTooManyRequests:
 			// Rate limit - retryable with longer backoff
-			log.Printf("[DEBUG] Rate limited (429). Retrying with longer backoff.")
 			backoffDelay := r.retryDelay * time.Duration(2<<uint(attempt))
 			if backoffDelay > 60*time.Second {
 				backoffDelay = 60 * time.Second
@@ -252,9 +237,7 @@ func (r *VertexAIRESTRepository) callTokenCountAPI(ctx context.Context, location
 		default:
 			// Other errors - retryable with exponential backoff
 			if resp.StatusCode >= 500 {
-				log.Printf("[DEBUG] Server error (%d). Retrying with exponential backoff.", resp.StatusCode)
 			} else {
-				log.Printf("[DEBUG] Client error (%d). Retrying with exponential backoff.", resp.StatusCode)
 			}
 			backoffDelay := r.retryDelay * time.Duration(1<<uint(attempt-1))
 			if backoffDelay > 30*time.Second {
@@ -269,8 +252,6 @@ func (r *VertexAIRESTRepository) callTokenCountAPI(ctx context.Context, location
 
 // GetUsageMetrics retrieves Vertex AI usage metrics (placeholder implementation)
 func (r *VertexAIRESTRepository) GetUsageMetrics(projectID string, start, end time.Time) (*entity.VertexAIUsage, error) {
-	log.Printf("[DEBUG] GetUsageMetrics called with projectID=%s, start=%v, end=%v",
-		projectID, start.Format(time.RFC3339), end.Format(time.RFC3339))
 
 	// For now, we'll use a simple test to demonstrate the retry logic
 	// In a real implementation, this would aggregate actual usage data
@@ -290,7 +271,6 @@ func (r *VertexAIRESTRepository) GetUsageMetrics(projectID string, start, end ti
 		return nil, fmt.Errorf("no models found")
 	}
 
-	log.Printf("[DEBUG] Using models from API: %v", models)
 
 	// Try to count tokens for a test message
 	testText := "This is a test message to verify Vertex AI connectivity and count tokens."
@@ -310,7 +290,6 @@ func (r *VertexAIRESTRepository) GetUsageMetrics(projectID string, start, end ti
 		}
 		// Store failure reason for debugging
 		failureReasons[model] = err.Error()
-		log.Printf("[DEBUG] Failed with model %s: %v", model, err)
 	}
 
 	// Log summary of model availability
@@ -380,7 +359,6 @@ func (r *VertexAIRESTRepository) CheckConnection() error {
 		// Get available models from API
 		models, err := r.ListPublisherModels(ctx, location)
 		if err != nil {
-			log.Printf("[DEBUG] Failed to list models for location %s: %v", location, err)
 			continue
 		}
 
@@ -388,10 +366,8 @@ func (r *VertexAIRESTRepository) CheckConnection() error {
 		for _, model := range models {
 			_, err := r.callTokenCountAPI(ctx, location, model, "test")
 			if err == nil {
-				log.Printf("[DEBUG] Successfully connected to model %s in location %s", model, location)
 				return nil // Connection successful
 			}
-			log.Printf("[DEBUG] Failed to connect to model %s in location %s: %v", model, location, err)
 		}
 	}
 
