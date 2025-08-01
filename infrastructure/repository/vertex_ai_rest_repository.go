@@ -163,8 +163,7 @@ func (r *VertexAIRESTRepository) callTokenCountAPI(ctx context.Context, location
 			continue
 		}
 		defer func() {
-			if err := resp.Body.Close(); err != nil {
-			}
+			_ = resp.Body.Close()
 		}()
 
 		body, err := io.ReadAll(resp.Body)
@@ -236,9 +235,8 @@ func (r *VertexAIRESTRepository) callTokenCountAPI(ctx context.Context, location
 
 		default:
 			// Other errors - retryable with exponential backoff
-			if resp.StatusCode >= 500 {
-			} else {
-			}
+			// Status code >= 500 are server errors, < 500 are client errors
+			// Both are retryable with exponential backoff
 			backoffDelay := r.retryDelay * time.Duration(1<<uint(attempt-1))
 			if backoffDelay > 30*time.Second {
 				backoffDelay = 30 * time.Second

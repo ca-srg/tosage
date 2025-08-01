@@ -169,8 +169,6 @@ func (r *VertexAIMonitoringRepository) debugListMetrics(ctx context.Context, pro
 			}
 			
 			count++
-			if count <= 50 || md.Type == "aiplatform.googleapis.com/publisher/online_serving/token_count" {
-			}
 			
 			if md.Type == "aiplatform.googleapis.com/publisher/online_serving/token_count" {
 				return
@@ -204,8 +202,6 @@ func (r *VertexAIMonitoringRepository) debugListMetrics(ctx context.Context, pro
 			
 			// Check if it's related to AI Platform
 			if vertexAIContains(md.Type, "aiplatform") || vertexAIContains(md.Type, "ml.googleapis.com") {
-				if md.Type == "aiplatform.googleapis.com/publisher/online_serving/token_count" {
-				}
 				aiplatformCount++
 			}
 			
@@ -265,9 +261,7 @@ func (r *VertexAIMonitoringRepository) getTokenCountByType(
 			}
 		}
 		
-		// Log resource labels
-		if ts.Resource != nil && ts.Resource.Labels != nil {
-		}
+		// Resource labels are available in ts.Resource.Labels if needed for debugging
 
 		// Sum points based on token type
 		pointCount := 0
@@ -282,8 +276,6 @@ func (r *VertexAIMonitoringRepository) getTokenCountByType(
 				} else if iv := point.Value.GetInt64Value(); iv != 0 {
 					value = float64(iv)
 					hasValue = true
-				} else {
-					// Log even if value is 0 to debug
 				}
 				
 				if hasValue {
