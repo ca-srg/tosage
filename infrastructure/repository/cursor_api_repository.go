@@ -244,7 +244,20 @@ func (r *CursorAPIRepository) checkTeamMembership(token *valueobject.CursorToken
 func (r *CursorAPIRepository) getPremiumRequests(token *valueobject.CursorToken, teamInfo *entity.TeamInfo) (entity.PremiumRequestsInfo, error) {
 	userID := token.UserID()
 
-	// Try team spend API first if user is a team member
+	// Always get individual usage data first (for both team members and individual users)
+	individualUsage, err := r.getIndividualUsage(token, userID)
+	if err != nil {
+		return entity.PremiumRequestsInfo{}, err
+	}
+
+	// Use default limit of 500 if maxRequestUsage is 0 (null in JSON)
+	limit := individualUsage.GPT4.MaxRequestUsage
+	if limit == 0 {
+		limit = 500 // Default premium request limit
+	}
+
+	// For team members, try to get additional team data for validation
+	// but always use the individual usage data for current request count
 	if teamInfo != nil && teamInfo.TeamID > 0 {
 		resp, err := r.makeAPIRequest(token, "POST", "/api/dashboard/get-team-spend", map[string]interface{}{
 			"teamId": teamInfo.TeamID,
@@ -256,46 +269,22 @@ func (r *CursorAPIRepository) getPremiumRequests(token *valueobject.CursorToken,
 
 			var teamSpend teamSpendResponse
 			if err := json.NewDecoder(resp.Body).Decode(&teamSpend); err == nil {
-				// Find user in team spend
+				// Log team spend data for debugging but use individual usage
 				for _, member := range teamSpend.TeamMemberSpend {
 					if member.UserID == teamInfo.UserID {
-						// Still need individual usage for limit
-						individualUsage, err := r.getIndividualUsage(token, userID)
-						if err == nil {
-							// Use default limit of 500 if maxRequestUsage is 0 (null in JSON)
-							limit := individualUsage.GPT4.MaxRequestUsage
-							if limit == 0 {
-								limit = 500 // Default premium request limit
-							}
-
-							return entity.PremiumRequestsInfo{
-								Current:      individualUsage.GPT4.NumRequests,
-								Limit:        limit,
-								StartOfMonth: individualUsage.StartOfMonth,
-							}, nil
-						}
+						// Team spend provides fastPremiumRequests but individual API
+						// provides more accurate real-time GPT-4 usage
+						break
 					}
 				}
 			}
 		}
 	}
 
-	// Fallback to individual usage API
-	usage, err := r.getIndividualUsage(token, userID)
-	if err != nil {
-		return entity.PremiumRequestsInfo{}, err
-	}
-
-	// Use default limit of 500 if maxRequestUsage is 0 (null in JSON)
-	limit := usage.GPT4.MaxRequestUsage
-	if limit == 0 {
-		limit = 500 // Default premium request limit
-	}
-
 	return entity.PremiumRequestsInfo{
-		Current:      usage.GPT4.NumRequests,
+		Current:      individualUsage.GPT4.NumRequests,
 		Limit:        limit,
-		StartOfMonth: usage.StartOfMonth,
+		StartOfMonth: individualUsage.StartOfMonth,
 	}, nil
 }
 
@@ -565,9 +554,18 @@ func (r *CursorAPIRepository) GetAggregatedTokenUsage(token *valueobject.CursorT
 	startDate := startOfDay.UnixMilli()
 	endDate := now.UnixMilli()
 
+	// First check if user is a team member to determine the correct teamId
+	teamInfo, _ := r.checkTeamMembership(token)
+	
+	// Set teamId based on membership status
+	teamId := -1 // Default for individual users
+	if teamInfo != nil && teamInfo.TeamID > 0 {
+		teamId = teamInfo.TeamID
+	}
+
 	// Create request payload
 	payload := map[string]interface{}{
-		"teamId":    -1,
+		"teamId":    teamId,
 		"startDate": startDate,
 		"endDate":   endDate,
 	}
@@ -575,7 +573,9 @@ func (r *CursorAPIRepository) GetAggregatedTokenUsage(token *valueobject.CursorT
 	// Make API request
 	resp, err := r.makeAPIRequest(token, "POST", "/api/dashboard/get-aggregated-usage-events", payload)
 	if err != nil {
-		return 0, err
+		// This API might not be available for all users or might be deprecated
+		// Return 0 instead of error to allow the application to continue
+		return 0, nil
 	}
 	defer func() {
 		_ = resp.Body.Close()

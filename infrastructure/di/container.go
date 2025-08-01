@@ -507,6 +507,7 @@ func (c *Container) initControllers() error {
 	// When Bedrock or Vertex AI is enabled, ccService will be nil
 	c.cliController = newCLIController(
 		c.ccService,
+		c.cursorService,
 		c.consolePresenter,
 		c.jsonPresenter,
 	)

@@ -9,11 +9,13 @@ import (
 // newCLIController creates a new CLI controller
 func newCLIController(
 	ccService usecase.CcService,
+	cursorService usecase.CursorService,
 	consolePresenter presenter.ConsolePresenter,
 	jsonPresenter presenter.JSONPresenter,
 ) *cli.CLIController {
 	return cli.NewCLIController(
 		ccService,
+		cursorService,
 		consolePresenter,
 		jsonPresenter,
 	)
