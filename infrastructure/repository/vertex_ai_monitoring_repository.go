@@ -51,8 +51,6 @@ func NewVertexAIMonitoringRepository(projectID string, authenticator auth.Vertex
 func (r *VertexAIMonitoringRepository) GetUsageMetrics(projectID string, start, end time.Time) (*entity.VertexAIUsage, error) {
 	ctx := context.Background()
 
-	log.Printf("[DEBUG] GetUsageMetrics called with projectID=%s, start=%v, end=%v",
-		projectID, start.Format(time.RFC3339), end.Format(time.RFC3339))
 
 	// Debug: List available metrics
 	r.debugListMetrics(ctx, projectID)
@@ -71,7 +69,6 @@ func (r *VertexAIMonitoringRepository) GetUsageMetrics(projectID string, start, 
 		return nil, fmt.Errorf("no token usage data found for metric %s", metricType)
 	}
 	
-	log.Printf("[DEBUG] Successfully retrieved tokens - input: %f, output: %f, total: %f", inputTokens, outputTokens, totalTokens)
 
 	// Get model-specific metrics
 	modelMetrics, err := r.getModelMetrics(ctx, projectID, start, end)
@@ -107,10 +104,8 @@ func (r *VertexAIMonitoringRepository) GetDailyUsage(projectID string, date time
 	var endTime time.Time
 	if startOfDay.Year() == now.Year() && startOfDay.Month() == now.Month() && startOfDay.Day() == now.Day() {
 		endTime = now
-		log.Printf("[DEBUG] GetDailyUsage: Today's usage requested, using current time as end: %v", endTime.Format(time.RFC3339))
 	} else {
 		endTime = startOfDay.Add(24 * time.Hour)
-		log.Printf("[DEBUG] GetDailyUsage: Past date requested, using end of day: %v", endTime.Format(time.RFC3339))
 	}
 
 	return r.GetUsageMetrics(projectID, startOfDay, endTime)
@@ -151,7 +146,6 @@ func (r *VertexAIMonitoringRepository) debugListMetrics(ctx context.Context, pro
 	projectName := fmt.Sprintf("projects/%s", projectID)
 	
 	// First, list available metric descriptors
-	log.Printf("[DEBUG] Listing available AI Platform metric descriptors...")
 	req := &monitoringpb.ListMetricDescriptorsRequest{
 		Name:   projectName,
 		Filter: `metric.type=starts_with("aiplatform.googleapis.com/")`,
@@ -171,18 +165,12 @@ func (r *VertexAIMonitoringRepository) debugListMetrics(ctx context.Context, pro
 				break
 			}
 			if err != nil {
-				log.Printf("[DEBUG] Error listing metric descriptors: %v", err)
 				return
 			}
 			
 			count++
-			if count <= 50 || md.Type == "aiplatform.googleapis.com/publisher/online_serving/token_count" {
-				log.Printf("[DEBUG] Found metric descriptor [%d]: %s", count, md.Type)
-			}
 			
 			if md.Type == "aiplatform.googleapis.com/publisher/online_serving/token_count" {
-				log.Printf("[DEBUG] Found target metric at position %d: aiplatform.googleapis.com/publisher/online_serving/token_count", count)
-				log.Printf("[DEBUG] Metric labels: %v", md.Labels)
 				return
 			}
 		}
@@ -193,13 +181,10 @@ func (r *VertexAIMonitoringRepository) debugListMetrics(ctx context.Context, pro
 		}
 	}
 	
-	log.Printf("[DEBUG] Scanned %d metrics across %d pages", count, pageCount)
 	
 	if count == 0 {
-		log.Printf("[DEBUG] No AI Platform metric descriptors found for project %s", projectID)
 		
 		// Try to list ALL metric descriptors to see what's available
-		log.Printf("[DEBUG] Listing ALL metric descriptors...")
 		req2 := &monitoringpb.ListMetricDescriptorsRequest{
 			Name: projectName,
 		}
@@ -212,16 +197,11 @@ func (r *VertexAIMonitoringRepository) debugListMetrics(ctx context.Context, pro
 				break
 			}
 			if err != nil {
-				log.Printf("[DEBUG] Error listing all metric descriptors: %v", err)
 				break
 			}
 			
 			// Check if it's related to AI Platform
 			if vertexAIContains(md.Type, "aiplatform") || vertexAIContains(md.Type, "ml.googleapis.com") {
-				log.Printf("[DEBUG] Found AI-related metric: %s", md.Type)
-				if md.Type == "aiplatform.googleapis.com/publisher/online_serving/token_count" {
-					log.Printf("[DEBUG] Found target metric in general search!")
-				}
 				aiplatformCount++
 			}
 			
@@ -243,8 +223,6 @@ func (r *VertexAIMonitoringRepository) getTokenCountByType(
 	// No filter - get all data for this metric type
 	filter := fmt.Sprintf(`metric.type="%s"`, metricType)
 
-	log.Printf("[DEBUG] Querying metric %s with filter: %s", metricType, filter)
-	log.Printf("[DEBUG] Time range: %v to %v", start.Format(time.RFC3339), end.Format(time.RFC3339))
 
 	req := &monitoringpb.ListTimeSeriesRequest{
 		Name:   projectName,
@@ -270,7 +248,6 @@ func (r *VertexAIMonitoringRepository) getTokenCountByType(
 			break
 		}
 		if err != nil {
-			log.Printf("[DEBUG] Error querying token count metric %s: %v", metricType, err)
 			return 0, 0, err
 		}
 
@@ -282,13 +259,9 @@ func (r *VertexAIMonitoringRepository) getTokenCountByType(
 			if typeLabel, ok := ts.Metric.Labels["type"]; ok {
 				tokenType = typeLabel
 			}
-			log.Printf("[DEBUG] Time series #%d - Metric labels: %v", seriesCount, ts.Metric.Labels)
 		}
 		
-		// Log resource labels
-		if ts.Resource != nil && ts.Resource.Labels != nil {
-			log.Printf("[DEBUG] Time series #%d - Resource labels: %v", seriesCount, ts.Resource.Labels)
-		}
+		// Resource labels are available in ts.Resource.Labels if needed for debugging
 
 		// Sum points based on token type
 		pointCount := 0
@@ -303,10 +276,6 @@ func (r *VertexAIMonitoringRepository) getTokenCountByType(
 				} else if iv := point.Value.GetInt64Value(); iv != 0 {
 					value = float64(iv)
 					hasValue = true
-				} else {
-					// Log even if value is 0 to debug
-					log.Printf("[DEBUG] Time series #%d - Point has zero value (double: %f, int64: %d) at %v", 
-						seriesCount, point.Value.GetDoubleValue(), point.Value.GetInt64Value(), point.Interval.EndTime.AsTime())
 				}
 				
 				if hasValue {
@@ -321,14 +290,11 @@ func (r *VertexAIMonitoringRepository) getTokenCountByType(
 						outputTokens += value / 2
 					}
 					pointCount++
-					log.Printf("[DEBUG] Time series #%d - Point value: %f at %v (type: %s)", seriesCount, value, point.Interval.EndTime.AsTime(), tokenType)
 				}
 			}
 		}
-		log.Printf("[DEBUG] Time series #%d - Points with value: %d, Total points: %d", seriesCount, pointCount, len(ts.Points))
 	}
 
-	log.Printf("[DEBUG] Total time series processed: %d, Input tokens: %f, Output tokens: %f", seriesCount, inputTokens, outputTokens)
 	return inputTokens, outputTokens, nil
 }
 
