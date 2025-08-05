@@ -52,6 +52,12 @@ func (d *DebugLogger) WithFields(fields ...domain.Field) domain.Logger {
 }
 
 func (d *DebugLogger) printToStdout(level domain.LogLevel, msg string, fields ...domain.Field) {
+	// Only print debug logs when debug level is Debug
+	if level == domain.LogLevelDebug {
+		// Skip debug logs - they're already sent to promtail
+		return
+	}
+	
 	d.mu.Lock()
 	defer d.mu.Unlock()
 

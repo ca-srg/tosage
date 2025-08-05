@@ -12,6 +12,7 @@ import (
 // CLIController handles command-line interface operations
 type CLIController struct {
 	ccService        usecase.CcService
+	cursorService    usecase.CursorService
 	consolePresenter presenter.ConsolePresenter
 	jsonPresenter    presenter.JSONPresenter
 	skipCCMetrics    bool
@@ -22,11 +23,13 @@ type CLIController struct {
 // NewCLIController creates a new CLI controller
 func NewCLIController(
 	ccService usecase.CcService,
+	cursorService usecase.CursorService,
 	consolePresenter presenter.ConsolePresenter,
 	jsonPresenter presenter.JSONPresenter,
 ) *CLIController {
 	return &CLIController{
 		ccService:        ccService,
+		cursorService:    cursorService,
 		consolePresenter: consolePresenter,
 		jsonPresenter:    jsonPresenter,
 	}
@@ -104,13 +107,26 @@ func (c *CLIController) Run() error {
 		return fmt.Errorf("failed to load cc data: %w", err)
 	}
 
-	// Calculate total tokens
-	totalTokens := 0
+	// Calculate claude code total tokens
+	claudeCodeTotalTokens := 0
 	for _, entry := range entries.Entries {
-		totalTokens += entry.TotalTokens
+		claudeCodeTotalTokens += entry.TotalTokens
 	}
 
-	// Just print the number
-	fmt.Println(totalTokens)
+	// Get cursor total tokens
+	cursorTotalTokens := int64(0)
+	if c.cursorService != nil {
+		tokens, err := c.cursorService.GetAggregatedTokenUsage()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: Failed to get Cursor usage: %v\n", err)
+		} else {
+			cursorTotalTokens = tokens
+		}
+	}
+
+	// Output in the requested format
+	fmt.Printf("cursor total token: %d\n", cursorTotalTokens)
+	fmt.Printf("claude code total token: %d\n", claudeCodeTotalTokens)
+	
 	return nil
 }

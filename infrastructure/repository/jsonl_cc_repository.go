@@ -67,7 +67,7 @@ func (r *JSONLCcRepository) loadAllEntries() ([]*entity.CcEntry, error) {
 	if r.cache.entries != nil && time.Since(r.cache.lastModified) < 5*time.Minute {
 		entries := r.cache.entries
 		r.cache.mu.RUnlock()
-		fmt.Fprintf(os.Stderr, "[DEBUG] Returning %d cached entries\n", len(entries))
+		// Cached entries returned
 		return entries, nil
 	}
 	r.cache.mu.RUnlock()
