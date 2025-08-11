@@ -131,7 +131,7 @@ jobs:
             org.opencontainers.image.licenses=MIT
 
       - name: Download binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           path: ./
           pattern: tosage-*
