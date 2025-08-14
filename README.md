@@ -79,6 +79,22 @@ Import the [Grafana dashboard configuration](./assets/grafana.json) to visualize
 - Tool breakdown (Claude Code, Cursor, Bedrock, Vertex AI)
 - Multi-cloud AI service cost tracking
 
+### Monitoring Infrastructure
+
+**Grafana Cloud** is ideally suited as the monitoring and data infrastructure for tosage. Grafana Cloud provides Prometheus, Grafana, Loki, and many other monitoring and visualization products for free, including all the features necessary for metrics collection and visualization with this tool.
+
+Our company uses Grafana Cloud's free plan for metrics collection and visualization, which provides sufficient functionality for personal use through small to medium enterprise operations.
+
+**Note**: Not PR - This is informational content based on actual operational experience, not a product endorsement.
+
+#### Key Benefits of Grafana Cloud
+
+- **Completely Free Plan**: 14 days of metrics retention, 10,000 series, and 50GB logs available at no cost
+- **Integrated Solution**: Prometheus, Grafana, Loki, and Tempo provided on a single platform
+- **Maintenance-Free**: No infrastructure management required, ready to use immediately
+- **Scalable**: Flexible plan upgrades as usage grows
+- **High Availability**: Stable service with SLA guarantees
+
 ## Installation
 
 ### Quick Installation (Recommended)
