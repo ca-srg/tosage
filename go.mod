@@ -14,7 +14,7 @@ require (
 	github.com/getlantern/systray v1.2.2
 	github.com/mattn/go-sqlite3 v1.14.30
 	github.com/stretchr/testify v1.10.0
-	golang.org/x/oauth2 v0.30.0
+	golang.org/x/oauth2 v0.31.0
 	google.golang.org/api v0.244.0
 	google.golang.org/protobuf v1.36.6
 )
