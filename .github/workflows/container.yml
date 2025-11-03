@@ -60,7 +60,7 @@ jobs:
           echo "Binary size: $(ls -lh tosage-${{ matrix.goos }}-${{ matrix.goarch }} | awk '{print $5}')"
 
       - name: Upload binary artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: tosage-${{ matrix.goos }}-${{ matrix.goarch }}
           path: tosage-${{ matrix.goos }}-${{ matrix.goarch }}
